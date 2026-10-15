@@ -305,7 +305,9 @@ last live run), `never`.
 A summary — rules retrieved and in scope per side, configuration dates,
 matched / identical / differ / only-on-each counts, new and resolved since
 last run — then three sections. The count rows link to their section, and
-every firewall and rule name links to its page in Security Manager:
+every firewall name links to its device page in Security Manager, and
+every rule name to a rule search by that name across the domain, which
+shows the rule on both firewalls side by side:
 
 - **Rules that differ** — per rule, one row per differing field, the
   primary's value beside the secondary's. For object lists, one item per

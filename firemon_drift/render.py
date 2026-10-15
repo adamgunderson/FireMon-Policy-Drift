@@ -20,6 +20,7 @@ import json
 import logging
 import os
 import re
+import urllib.parse
 from string import Template
 from typing import List
 
@@ -126,11 +127,15 @@ class Renderer:
         return "%s/device/%s/dashboard" % (root, device_id) if (root and device_id) else ""
 
     def _rule_url(self, rule: Rule) -> str:
+        """A rule search by name across the domain, so the page shows the
+        rule on both firewalls side by side rather than one device's copy."""
         root = self._sm_root()
-        if not (root and rule.device_id and rule.policy_id and rule.match_id):
+        if not (root and rule.name):
             return ""
-        return "%s/device/%s/policy/%s/rule/%s/dashboard" % (
-            root, rule.device_id, rule.policy_id, rule.match_id)
+        siql = "domain { id = %s }  AND rule { ruleName ~ '%s' } " % (
+            getattr(self.cfg, "domain_id", 1), rule.name.replace("'", "''"))
+        return "%s/listrules?page=1&count=20&advancedMode=0&siql=%s" % (
+            root, urllib.parse.quote(siql, safe=""))
 
     def _device_link(self, side: str) -> str:
         """The side's label, linked to the device in Security Manager."""
