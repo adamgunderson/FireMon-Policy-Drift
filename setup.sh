@@ -22,6 +22,17 @@
 #   schedule           install or replace the cron entry.
 #   unschedule         remove the cron entry. Leaves every file alone.
 #   status             report what is configured, scheduled and last found.
+#   pairs              a sub-menu for the verbs below.
+#   list-pairs         every pair: devices, policies, recipients, send rule.
+#   add-pair           add ONE firewall pair to an existing config.ini -- the
+#                      two devices, how rules are matched, which policies and
+#                      rules, who gets its report and when -- without redoing
+#                      the wizard. Lists devices and policies to pick from.
+#   edit-pair [NAME]   change a pair: every prompt defaults to its current
+#                      value, so Enter keeps it. Name as argument, --pair, or
+#                      asked.
+#   remove-pair [NAME] drop a pair and its last-run state. Past reports in
+#                      out/ are kept.
 #   add-recipient      add an email address (e.g. a manager who wants
 #                      visibility) to one, several, or every pair's
 #                      recipient list -- without redoing the wizard. Takes
@@ -57,6 +68,7 @@
 #                      of mailing the real recipients.
 #   --pair NAME        for `add-recipient`: which pair to add to (repeatable).
 #                      Without it, add-recipient asks (default: every pair).
+#                      For `edit-pair` / `remove-pair`: the pair to act on.
 #   --source PATH|URL  for `update`: where the new files come from -- a
 #                      directory, a .tar.gz or .zip on this box, or a URL.
 #                      Default: the GitHub tarball (see FMDRIFT_UPDATE_REPO).
@@ -88,6 +100,9 @@
 #   FMDRIFT_SETUP_PAIR<N>_SEND_WHEN       drift | always | changes
 #   FMDRIFT_SETUP_SMTP_HOST / _SMTP_PORT / _SMTP_STARTTLS / _SMTP_USERNAME
 #   FMDRIFT_SETUP_FROM_ADDRESS
+#   FMDRIFT_SETUP_TARGET_PAIR       edit-pair / remove-pair: the pair, when not given
+#                                   as an argument. add-pair and edit-pair read
+#                                   FMDRIFT_SETUP_PAIR1_* for their answers.
 #   FMDRIFT_SETUP_NEW_RECIPIENT     add-recipient: email(s) to add, comma-separated
 #   FMDRIFT_SETUP_RECIPIENT_PAIRS   add-recipient: pair names, comma-separated, or "all"
 #   FMDRIFT_UPDATE_REPO             update: GitHub repo (default adamgunderson/FireMon-Policy-Drift)
@@ -521,6 +536,65 @@ append_pair_section() {
         printf 'recipients      = %s\n' "${recipients:-none}"
         printf 'send_when       = %s\n' "$send_when"
     } >> "$file"
+}
+
+
+# Set one "key = value" line in a section: replace the live line if the
+# section has it, else add it after the section's last live line. For
+# editing a pair whose section may lack some keys (written by hand, or by an
+# older version of the wizard).
+set_section_key() {
+    local target="$1" section="$2" key="$3" value="$4"
+    awk -v SEC="$section" -v KEY="$key" -v VAL="$value" '
+        function emit() { if (VAL == "") printf("%-15s =\n", KEY); else printf("%-15s = %s\n", KEY, VAL) }
+        function flush_blanks() { while (blanks > 0) { print ""; blanks-- } }
+        /^[[:space:]]*\[/ {
+            if (inside && !done) { emit(); done = 1 }
+            flush_blanks()
+            s = $0; sub(/^[[:space:]]*\[/, "", s); sub(/\].*$/, "", s)
+            inside = (s == SEC); print; next
+        }
+        {
+            if (inside) {
+                if ($0 ~ /^[[:space:]]*$/) { blanks++; next }
+                if (!done && match($0, /^[[:space:]]*[A-Za-z0-9_]+[[:space:]]*=/)) {
+                    k = substr($0, RSTART, RLENGTH); sub(/[[:space:]]*=$/, "", k); sub(/^[[:space:]]+/, "", k)
+                    if (k == KEY) { flush_blanks(); emit(); done = 1; next }
+                }
+            }
+            flush_blanks(); print
+        }
+        END { if (inside && !done) emit(); flush_blanks() }
+    ' "$target" > "$target.patched" || die "could not set $key in [$section] of $(basename "$target")"
+    mv "$target.patched" "$target"
+}
+
+# Drop a [pair:NAME] section and the [policies:NAME], [property_filters:NAME]
+# and [normalise:NAME] sections scoped to it. Case-insensitive on the name.
+remove_pair_sections() {
+    local target="$1" name="$2"
+    awk -v want="$(printf '%s' "$name" | tr '[:upper:]' '[:lower:]')" '
+        /^[[:space:]]*\[/ {
+            s = $0; sub(/^[[:space:]]*\[/, "", s); sub(/\].*$/, "", s)
+            drop = 0
+            if (tolower(s) ~ /^(pair|policies|property_filters|normalise):/) {
+                n = s; sub(/^[^:]*:[[:space:]]*/, "", n)
+                if (tolower(n) == want) drop = 1
+            }
+            if (drop) next
+            print; next
+        }
+        { if (!drop) print }
+    ' "$target" > "$target.patched" || die "could not remove pair '$name' from $(basename "$target")"
+    mv "$target.patched" "$target"
+}
+
+# The state file a pair keeps (NEW/resolved markers), by the same slug rule
+# as firemon_drift/state.py.
+pair_state_file() {
+    local slug
+    slug="$(printf '%s' "$1" | sed 's/[^A-Za-z0-9._-]\{1,\}/_/g; s/^_//; s/_$//')"
+    printf '%s/state/last-%s.json' "$INSTALL_DIR" "${slug:-x}"
 }
 
 # Insert the contents of a file into a config just before the named section
@@ -1109,14 +1183,30 @@ do_configure() {
 # from FMDRIFT_SETUP_PAIR<n>_* when set, so an unattended run can add any
 # number of pairs.
 DEVICES_LISTED=0
+# A second file whose pair names a NEW pair may not reuse (add-pair sets it
+# to the live config.ini; the wizard, which rebuilds the file, leaves it empty).
+EXTRA_NAMES_FILE=""
+# Ask everything about one pair. With no 5th argument the answers become a
+# new [pair:NAME] section appended to $4. With a section name as the 5th
+# argument the pair is EDITED in place in $2: every prompt defaults to the
+# current value, so Enter keeps it, and the device and policy listings are
+# skipped.
 _configure_pair() {
-    local i="$1" candidate="$2" secrets="$3" pairs_file="$4"
-    local P="FMDRIFT_SETUP_PAIR${i}_" v
-    head2 "Pair $i"
+    local i="$1" candidate="$2" secrets="$3" pairs_file="$4" edit_section="${5:-}"
+    local P="FMDRIFT_SETUP_PAIR${i}_" v editing=0 name=""
+    [ -n "$edit_section" ] && editing=1
+    _pair_cur() { [ "$editing" -eq 1 ] && config_value "$candidate" "$edit_section" "$1"; return 0; }
+    if [ "$editing" -eq 1 ]; then
+        name="${edit_section#*:}"; [ "$edit_section" = "pair" ] && name="default"
+        head2 "Pair '$name'"
+        info "Enter keeps the current value shown in brackets."
+    else
+        head2 "Pair $i"
+    fi
 
     local primary secondary filter
     v="${P}PRIMARY"
-    if [ "$DEVICES_LISTED" -eq 0 ] && [ -z "${!v-}" ]; then
+    if [ "$editing" -eq 0 ] && [ "$DEVICES_LISTED" -eq 0 ] && [ -z "${!v-}" ]; then
         filter="$(ask 'List devices whose name contains (or "all")' 'all' FMDRIFT_SETUP_DEVICE_FILTER)"
         [ "$filter" = "all" ] && filter=""
         info "asking the server for firewall devices..."
@@ -1127,33 +1217,35 @@ _configure_pair() {
             warn "You can still type the names by hand."
         fi
     fi
-    primary="$(ask 'Primary firewall (name or id)' '' "${P}PRIMARY")"
-    secondary="$(ask 'Secondary firewall (name or id)' '' "${P}SECONDARY")"
+    primary="$(ask 'Primary firewall (name or id)' "$(_pair_cur primary)" "${P}PRIMARY")"
+    secondary="$(ask 'Secondary firewall (name or id)' "$(_pair_cur secondary)" "${P}SECONDARY")"
     reject_unsafe "The primary device" "$primary"
     reject_unsafe "The secondary device" "$secondary"
     [ "$primary" != "$secondary" ] || die "the primary and secondary are the same device."
 
-    local name
-    while true; do
-        name="$(ask 'Name for this pair (used in the subject line and --pair)' "pair$i" "${P}NAME")"
-        case "$name" in
-            *[!A-Za-z0-9._\ -]*|[!A-Za-z0-9]*)
-                die "a pair name is letters, digits, dots, spaces, hyphens or underscores, starting with a letter or digit (got '$name')." ;;
-        esac
-        if list_pair_names "$pairs_file" | grep -qixF "$name"; then
-            v="${P}NAME"
-            [ -z "${!v-}" ] || die "a pair named '$name' already exists."
-            printf 'A pair named %s already exists; choose another.\n' "$name" >&2
-            continue
-        fi
-        break
-    done
+    if [ "$editing" -eq 0 ]; then
+        while true; do
+            name="$(ask 'Name for this pair (used in the subject line and --pair)' "pair$i" "${P}NAME")"
+            case "$name" in
+                *[!A-Za-z0-9._\ -]*|[!A-Za-z0-9]*)
+                    die "a pair name is letters, digits, dots, spaces, hyphens or underscores, starting with a letter or digit (got '$name')." ;;
+            esac
+            if list_pair_names "$pairs_file" | grep -qixF "$name" \
+               || { [ -n "$EXTRA_NAMES_FILE" ] && list_all_pair_names "$EXTRA_NAMES_FILE" | grep -qixF "$name"; }; then
+                v="${P}NAME"
+                [ -z "${!v-}" ] || die "a pair named '$name' already exists."
+                printf 'A pair named %s already exists; choose another.\n' "$name" >&2
+                continue
+            fi
+            break
+        done
+    fi
 
     # ---- policies --------------------------------------------------------
-    local policies_in policies='' pairs_tmp
+    local policies_in policies='' pairs_tmp cur_policies
     pairs_tmp="$(mktemp)"
     v="${P}POLICIES"
-    if [ -z "${!v-}" ]; then
+    if [ "$editing" -eq 0 ] && [ -z "${!v-}" ]; then
         info "asking the server which policies each firewall carries..."
         if ! _run_candidate "$candidate" "$secrets" --primary "$primary" --secondary "$secondary" \
                 --list-policies --log-level ERROR; then
@@ -1162,9 +1254,10 @@ _configure_pair() {
             die "nothing was written."
         fi
     fi
-    policies_in="$(ask 'Policy pairs to compare, as "primary policy = secondary policy", comma-separated; or "all" for every rule on each device' 'all' "${P}POLICIES")"
+    cur_policies="$(_pair_cur policies)"
+    policies_in="$(ask 'Policy pairs to compare, as "primary policy = secondary policy", comma-separated; or "all" for every rule on each device' "${cur_policies:-all}" "${P}POLICIES")"
     case "$(printf '%s' "$policies_in" | tr '[:upper:]' '[:lower:]')" in
-        all|'') info "every policy; rules matched by name across the device" ;;
+        all|'') info "every policy; rules matched across the device" ;;
         *) _parse_policy_pairs "$policies_in" "policy pair" "$pairs_tmp" >/dev/null
            policies="$(paste -sd ',' "$pairs_tmp" | sed 's/,/, /g')"
            info "comparing: $policies" ;;
@@ -1172,13 +1265,16 @@ _configure_pair() {
     rm -f "$pairs_tmp"
 
     # ---- how rules are paired up -----------------------------------------
-    local match_by
-    info "Rules are normally matched by NAME, which suits two policies that mirror"
-    info "each other. If these two firewalls carry the SAME policy from the same"
-    info "manager (an HA pair, or two devices assigned one FMC access control"
-    info "policy), matching by the vendor's rule id reports a renamed rule as a"
-    info "rename instead of one missing rule plus one extra."
-    match_by="$(ask 'Match rules by: name, or vendor_id' 'name' "${P}MATCH_BY")"
+    local match_by cur_match
+    cur_match="$(_pair_cur match_by)"
+    if [ "$editing" -eq 0 ]; then
+        info "Rules are normally matched by NAME, which suits two policies that mirror"
+        info "each other. If these two firewalls carry the SAME policy from the same"
+        info "manager (an HA pair, or two devices assigned one FMC access control"
+        info "policy), matching by the vendor's rule id reports a renamed rule as a"
+        info "rename instead of one missing rule plus one extra."
+    fi
+    match_by="$(ask 'Match rules by: name, or vendor_id' "${cur_match:-name}" "${P}MATCH_BY")"
     match_by="$(printf '%s' "$match_by" | tr '[:upper:]' '[:lower:]' | tr -d ' ')"
     case "$match_by" in
         name|vendor_id) ;;
@@ -1187,36 +1283,45 @@ _configure_pair() {
     esac
 
     # ---- filters ---------------------------------------------------------
-    local survey categories='' change_requests='' applications='' value
-    survey="$(ask 'Survey the categories and rule-doc properties in use on this pair? (takes a minute)' 'no' FMDRIFT_SETUP_LIST_PROPERTIES)"
-    if [ "$(yesno_to_bool "$survey")" = "true" ]; then
-        _run_candidate "$candidate" "$secrets" --primary "$primary" --secondary "$secondary" \
-            --list-properties --log-level ERROR || warn "the survey failed; carrying on"
+    local survey categories='' change_requests='' applications='' value cur_value
+    if [ "$editing" -eq 0 ]; then
+        survey="$(ask 'Survey the categories and rule-doc properties in use on this pair? (takes a minute)' 'no' FMDRIFT_SETUP_LIST_PROPERTIES)"
+        if [ "$(yesno_to_bool "$survey")" = "true" ]; then
+            _run_candidate "$candidate" "$secrets" --primary "$primary" --secondary "$secondary" \
+                --list-properties --log-level ERROR || warn "the survey failed; carrying on"
+        fi
     fi
-    value="$(ask 'Categories to cover (comma-separated globs), or "all"' 'all' "${P}CATEGORIES")"
+    cur_value="$(_pair_cur categories)"
+    value="$(ask 'Categories to cover (comma-separated globs), or "all"' "${cur_value:-all}" "${P}CATEGORIES")"
     case "$(printf '%s' "$value" | tr '[:upper:]' '[:lower:]')" in
         all|'') ;;
         *) categories="$(_parse_plain_list "$value" "category")" ;;
     esac
-    value="$(ask 'Change request numbers (comma-separated), or "none"' 'none' "${P}CHANGE_REQUESTS")"
+    cur_value="$(_pair_cur change_requests)"
+    value="$(ask 'Change request numbers (comma-separated), or "none"' "${cur_value:-none}" "${P}CHANGE_REQUESTS")"
     case "$(printf '%s' "$value" | tr '[:upper:]' '[:lower:]')" in
         none|'') ;;
         *) change_requests="$(_parse_plain_list "$value" "change request")" ;;
     esac
-    value="$(ask 'Applications (comma-separated globs), or "none"' 'none' "${P}APPLICATIONS")"
+    cur_value="$(_pair_cur applications)"
+    value="$(ask 'Applications (comma-separated globs), or "none"' "${cur_value:-none}" "${P}APPLICATIONS")"
     case "$(printf '%s' "$value" | tr '[:upper:]' '[:lower:]')" in
         none|'') ;;
         *) applications="$(_parse_plain_list "$value" "application")" ;;
     esac
 
     # ---- email -----------------------------------------------------------
-    local recipients='' send_when
-    value="$(ask 'Recipients for this pair (comma-separated), or "none" to only write the report to out/' '' "${P}RECIPIENTS")"
+    local recipients='' send_when cur_rcpt cur_sw
+    cur_rcpt="$(_pair_cur recipients)"
+    [ "$editing" -eq 1 ] && cur_rcpt="${cur_rcpt:-none}"
+    value="$(ask 'Recipients for this pair (comma-separated), or "none" to only write the report to out/' "$cur_rcpt" "${P}RECIPIENTS")"
     case "$(printf '%s' "$value" | tr '[:upper:]' '[:lower:]')" in
         none) ;;
         *) recipients="$(_parse_email_list "$value" "recipient")" ;;
     esac
-    send_when="$(ask 'Send when? drift = only when differences exist; always = every run; changes = only when something is new or resolved' 'drift' "${P}SEND_WHEN")"
+    cur_sw="$(_pair_cur send_when)"
+    [ "$cur_sw" = "never" ] && [ -n "$recipients" ] && cur_sw="drift"
+    send_when="$(ask 'Send when? drift = only when differences exist; always = every run; changes = only when something is new or resolved' "${cur_sw:-drift}" "${P}SEND_WHEN")"
     send_when="$(printf '%s' "$send_when" | tr '[:upper:]' '[:lower:]')"
     case "$send_when" in
         drift|always|changes) ;;
@@ -1225,10 +1330,25 @@ _configure_pair() {
     esac
     [ -n "$recipients" ] || send_when="never"
 
-    append_pair_section "$pairs_file" "$name" "$primary" "$secondary" "$policies" \
-        "$categories" "$change_requests" "$applications" "$recipients" "$send_when" "$match_by"
-    ok "pair '$name': $primary -> $secondary, matched by $match_by, ${recipients:-no email}, send_when=$send_when"
+    if [ "$editing" -eq 1 ]; then
+        set_section_key "$candidate" "$edit_section" primary         "$primary"
+        set_section_key "$candidate" "$edit_section" secondary       "$secondary"
+        set_section_key "$candidate" "$edit_section" policies        "${policies:-all}"
+        set_section_key "$candidate" "$edit_section" match_by        "$match_by"
+        set_section_key "$candidate" "$edit_section" categories      "${categories:-all}"
+        set_section_key "$candidate" "$edit_section" change_requests "${change_requests:-none}"
+        set_section_key "$candidate" "$edit_section" applications    "${applications:-none}"
+        set_section_key "$candidate" "$edit_section" recipients      "${recipients:-none}"
+        set_section_key "$candidate" "$edit_section" send_when       "$send_when"
+        ok "pair '$name': $primary -> $secondary, matched by $match_by, ${recipients:-no email}, send_when=$send_when"
+    else
+        append_pair_section "$pairs_file" "$name" "$primary" "$secondary" "$policies" \
+            "$categories" "$change_requests" "$applications" "$recipients" "$send_when" "$match_by"
+        ok "pair '$name': $primary -> $secondary, matched by $match_by, ${recipients:-no email}, send_when=$send_when"
+    fi
+    LAST_PAIR_NAME="$name"
 }
+LAST_PAIR_NAME=""
 
 stage_secrets() {
     local fm_pass="$1" smtp_pass="$2" tmp="$INSTALL_DIR/secrets.env.new"
@@ -1746,6 +1866,172 @@ do_add_recipient() {
     action "  bash setup.sh run --send-test ${email%%,*}"
 }
 
+
+# ============================================================ pairs =========
+#
+# add-pair, edit-pair and remove-pair change ONE pair in config.ini without
+# redoing the wizard: a candidate copy is edited, previewed, confirmed,
+# backed up over, then proven by loading it; a copy that fails to load is
+# rolled back. Each pair has its own recipients and send rule, so this is
+# also how "send this pair's report to these people" is set.
+
+# Which pair a verb acts on: the argument, --pair, or a prompt.
+_pick_pair() {
+    local name="$POSITIONAL_ARG" names
+    [ -n "$name" ] || [ "${#PAIRS[@]}" -eq 0 ] || name="${PAIRS[0]}"
+    names="$(list_all_pair_names "$INSTALL_DIR/config.ini" | tr '\n' ' ')"
+    [ -n "$names" ] || die "no pairs are configured yet. Run: bash setup.sh add-pair"
+    if [ -z "$name" ]; then
+        info "configured pairs:"
+        pair_summary_lines "$INSTALL_DIR/config.ini" | while IFS= read -r l; do info "  $l"; done
+        name="$(ask "Which pair? ($names)" '' FMDRIFT_SETUP_TARGET_PAIR)"
+    fi
+    PICKED_SECTION="$(find_pair_section "$INSTALL_DIR/config.ini" "$name")"
+    [ -n "$PICKED_SECTION" ] || die "no pair named '$name'. Configured: $names"
+    PICKED_NAME="$name"
+    [ "$PICKED_SECTION" = "pair" ] && PICKED_NAME="default"
+}
+PICKED_SECTION=""
+PICKED_NAME=""
+
+# Preview a candidate config against the live one, confirm, back up, write,
+# prove it loads (roll back if not), then offer a dry run of the pair.
+_commit_pair_change() {
+    local candidate="$1" what="$2" pair="${3:-}"
+    head2 "About to write"
+    say ""
+    if have diff; then
+        diff -u "$INSTALL_DIR/config.ini" "$candidate" | sed -n '3,120p' | sed 's/^/    /'
+    else
+        info "pairs after the change:"
+        pair_summary_lines "$candidate" | while IFS= read -r l; do info "  $l"; done
+    fi
+    say ""
+    if ! confirm "Write this change to config.ini?"; then
+        rm -f "$candidate"
+        skip "nothing written"
+        exit "$EXIT_OK"
+    fi
+    mkdir -p "$INSTALL_DIR/backups" || die "could not create $INSTALL_DIR/backups"
+    local backup_path="$INSTALL_DIR/backups/config-$(date '+%Y%m%dT%H%M%S').ini.bak"
+    cp -p "$INSTALL_DIR/config.ini" "$backup_path" || die "could not write $backup_path"
+    mv "$candidate" "$INSTALL_DIR/config.ini"
+    chmod 600 "$INSTALL_DIR/config.ini"
+
+    head2 "Confirming the config still loads"
+    if run_drift --list-pairs --log-level ERROR >/dev/null 2>"$INSTALL_DIR/.pair.err"; then
+        ok "config.ini is valid: $what"
+        info "previous config.ini backed up under $backup_path"
+        rm -f "$INSTALL_DIR/.pair.err"
+    else
+        say "ERROR:   the edited config.ini failed to load -- restoring the previous version."
+        cp -p "$backup_path" "$INSTALL_DIR/config.ini"
+        say "         Restored from $backup_path. It said:"
+        if [ -s "$INSTALL_DIR/.pair.err" ]; then
+            while IFS= read -r l; do say "           $l"; done < "$INSTALL_DIR/.pair.err"
+        fi
+        rm -f "$INSTALL_DIR/.pair.err"
+        exit "$EXIT_FAIL"
+    fi
+    if [ -n "$pair" ]; then
+        if { true < /dev/tty; } 2>/dev/null && [ "$OPT_YES" -eq 0 ] \
+           && confirm "Prove pair '$pair' against the live server with a dry-run comparison now? (sends nothing)"; then
+            run_drift --pair "$pair" --dry-run --log-level WARNING
+            report_outcome $? || warn "the dry run exited $?; check the pair's devices and policies."
+        else
+            action "prove it when convenient:  bash setup.sh verify"
+        fi
+        if [ "$(config_value "$INSTALL_DIR/config.ini" "$(find_pair_section "$INSTALL_DIR/config.ini" "$pair")" send_when)" != "never" ]; then
+            action "this pair is mailed on the schedule's next run; to send it now:"
+            action "  bash setup.sh run"
+        fi
+    fi
+}
+
+do_add_pair() {
+    need_config
+    head2 "Add a pair"
+    info "a pair is two firewalls whose policies should match: the primary is"
+    info "the reference, the secondary is expected to mirror it. The pair gets"
+    info "its own recipients, send rule, filters and last-run state."
+    local candidate="$INSTALL_DIR/config.ini.new" pairs_file
+    cp -p "$INSTALL_DIR/config.ini" "$candidate" || die "could not copy config.ini"
+    pairs_file="$(mktemp)"; : > "$pairs_file"
+    DEVICES_LISTED=0
+    EXTRA_NAMES_FILE="$INSTALL_DIR/config.ini"
+    _configure_pair 1 "$candidate" "$INSTALL_DIR/secrets.env" "$pairs_file"
+    insert_before_section "$candidate" compare "$pairs_file"
+    rm -f "$pairs_file"
+    _commit_pair_change "$candidate" "pair '$LAST_PAIR_NAME' added" "$LAST_PAIR_NAME"
+}
+
+do_edit_pair() {
+    need_config
+    head2 "Modify a pair"
+    _pick_pair
+    info "current: $(pair_summary_lines "$INSTALL_DIR/config.ini" | grep -i "^$PICKED_NAME:" | head -n 1)"
+    local candidate="$INSTALL_DIR/config.ini.new"
+    cp -p "$INSTALL_DIR/config.ini" "$candidate" || die "could not copy config.ini"
+    _configure_pair 1 "$candidate" "$INSTALL_DIR/secrets.env" "" "$PICKED_SECTION"
+    if cmp -s "$candidate" "$INSTALL_DIR/config.ini"; then
+        rm -f "$candidate"
+        skip "nothing changed"
+        return 0
+    fi
+    _commit_pair_change "$candidate" "pair '$PICKED_NAME' updated" "$PICKED_NAME"
+}
+
+do_remove_pair() {
+    need_config
+    head2 "Remove a pair"
+    _pick_pair
+    info "removing: $(pair_summary_lines "$INSTALL_DIR/config.ini" | grep -i "^$PICKED_NAME:" | head -n 1)"
+    local remaining
+    remaining="$(list_all_pair_names "$INSTALL_DIR/config.ini" | grep -vixF "$PICKED_NAME" | wc -l)"
+    [ "$remaining" -gt 0 ] || warn "this is the only pair; the scheduled run will have nothing to compare until one is added."
+    confirm "Remove pair '$PICKED_NAME' from config.ini?" || { skip "nothing removed"; exit "$EXIT_OK"; }
+    local candidate="$INSTALL_DIR/config.ini.new"
+    cp -p "$INSTALL_DIR/config.ini" "$candidate" || die "could not copy config.ini"
+    if [ "$PICKED_SECTION" = "pair" ]; then
+        # The single-pair shorthand has no section to drop: blank its devices.
+        TABLE_FILE="$(mktemp)"; : > "$TABLE_FILE"
+        table_add pair primary ""
+        table_add pair secondary ""
+        patch_config "$candidate" "$TABLE_FILE"
+        rm -f "$TABLE_FILE"
+    else
+        remove_pair_sections "$candidate" "$PICKED_NAME"
+    fi
+    _commit_pair_change "$candidate" "pair '$PICKED_NAME' removed"
+    local statefile
+    statefile="$(pair_state_file "$PICKED_NAME")"
+    if [ -f "$statefile" ]; then
+        rm -f "$statefile"
+        info "its last-run state ($(basename "$statefile")) was removed; out/ keeps its past reports"
+    fi
+}
+
+do_list_pairs() {
+    need_config
+    head2 "Pairs"
+    local lines
+    lines="$(pair_summary_lines "$INSTALL_DIR/config.ini")"
+    if [ -z "$lines" ]; then
+        info "none configured. Add one with: bash setup.sh add-pair"
+        return 0
+    fi
+    printf '%s\n' "$lines" | while IFS= read -r l; do say "  $l"; done
+    say ""
+    info "as the report resolves them (with inherited defaults):"
+    run_drift --list-pairs --log-level ERROR 2>/dev/null | sed 's/^/  /' || warn "config.ini does not load; run: bash setup.sh status"
+}
+
+do_pairs_menu() {
+    MENU_BUILDER="_menu_build_pairs"
+    MENU_TITLE="Firewall pairs"
+    do_menu
+}
+
 do_uninstall() {
     head2 "Uninstall"
     if have crontab; then
@@ -2016,19 +2302,30 @@ tui_caps() {
 _t() { [ "$TUI_ANSI" = 1 ] && tput "$@" 2>/dev/null; return 0; }
 
 MENU_LABELS=(); MENU_HINTS=(); MENU_VERBS=()
+MENU_BUILDER="_menu_build"
+MENU_TITLE=""
+_menu_add() { MENU_LABELS+=("$1"); MENU_HINTS+=("$2"); MENU_VERBS+=("$3"); }
 _menu_build() {
     MENU_LABELS=(); MENU_HINTS=(); MENU_VERBS=()
-    _menu_add() { MENU_LABELS+=("$1"); MENU_HINTS+=("$2"); MENU_VERBS+=("$3"); }
     _menu_add "Configure"  "connection, firewall pairs, policies, filters, email" configure
     _menu_add "Verify"     "read-only checks; render to out/, send nothing"      verify
     _menu_add "Run now"    "compare and email the real recipients (asks first)"  run
     _menu_add "Schedule"   "install or replace the cron entry"                   schedule
     _menu_add "Unschedule" "remove the cron entry, leaving files alone"          unschedule
     _menu_add "Status"     "configuration, schedule and last findings"           status
-    _menu_add "Add recipient" "add an email to one, several, or every pair"      add-recipient
+    _menu_add "Pairs"      "add, modify or remove a firewall pair; its recipients" pairs
     _menu_add "Update"     "fetch the newest release; keeps config, secrets, state" update
     _menu_add "Full setup" "configure, verify, then schedule in one pass"        install
     _menu_add "Uninstall"  "remove the schedule and, optionally, the files"      uninstall
+}
+# The Pairs sub-menu: one pair at a time, without redoing the wizard.
+_menu_build_pairs() {
+    MENU_LABELS=(); MENU_HINTS=(); MENU_VERBS=()
+    _menu_add "List pairs"    "every pair, its devices, recipients and send rule"   list-pairs
+    _menu_add "Add pair"      "two firewalls, who gets the report and when"        add-pair
+    _menu_add "Modify pair"   "change devices, policies, recipients or send rule"  edit-pair
+    _menu_add "Remove pair"   "drop a pair and its last-run state"                 remove-pair
+    _menu_add "Add recipient" "add an email to one, several, or every pair"        add-recipient
 }
 
 _menu_status_line() {
@@ -2061,7 +2358,7 @@ _menu_draw() {
     _t clear
     _t civis
     _t bold; _t setaf 6
-    printf '  FireMon Policy Drift Report\n'
+    printf '  FireMon Policy Drift Report%s\n' "${MENU_TITLE:+ -- $MENU_TITLE}"
     _t sgr0
     _t setaf 4; printf '  %s\n' "$(_menu_status_line)"; _t sgr0
     printf '  %s\n\n' "$INSTALL_DIR"
@@ -2077,7 +2374,8 @@ _menu_draw() {
     done
     printf '\n'
     _t setaf 4
-    printf '  Up/Down or a number to choose  ·  Enter to run  ·  q to quit\n'
+    printf '  Up/Down or a number to choose  ·  Enter to run  ·  q to %s\n' "${MENU_TITLE:+go back}"
+    [ -n "$MENU_TITLE" ] || printf '\033[1A  Up/Down or a number to choose  ·  Enter to run  ·  q to quit\n'
     _t sgr0
 }
 
@@ -2123,15 +2421,16 @@ _menu_plain() {
         usage
         return 0
     fi
-    _menu_build
+    "$MENU_BUILDER"
     local n="${#MENU_LABELS[@]}" choice i
     while true; do
-        printf '\nFireMon Policy Drift Report  --  %s\n' "$(_menu_status_line)"
+        printf '\nFireMon Policy Drift Report%s  --  %s\n' "${MENU_TITLE:+ -- $MENU_TITLE}" "$(_menu_status_line)"
         printf '  %s\n' "$INSTALL_DIR"
         for ((i = 0; i < n; i++)); do
             printf '  %d) %-14s %s\n' "$((i + 1))" "${MENU_LABELS[$i]}" "${MENU_HINTS[$i]}"
         done
-        printf '  q) Quit\n'
+        printf '  q) %s\n' "${MENU_TITLE:+Back}"
+        [ -n "$MENU_TITLE" ] || printf '\033[1A  q) Quit\n'
         read -r -p 'Choose: ' choice </dev/tty || break
         case "$choice" in
             q|Q|'') break ;;
@@ -2155,7 +2454,7 @@ do_menu() {
         _menu_plain
         return 0
     fi
-    _menu_build
+    "$MENU_BUILDER"
     local sel=0 n="${#MENU_LABELS[@]}" key idx
     trap '_menu_cleanup' EXIT
     trap '_menu_cleanup; exit 130' INT
@@ -2191,7 +2490,7 @@ fi
 
 while [ $# -gt 0 ]; do
     case "$1" in
-        menu|install|configure|verify|run|schedule|unschedule|status|add-recipient|restore-crontab|update|uninstall|help)
+        menu|install|configure|verify|run|schedule|unschedule|status|pairs|list-pairs|add-pair|edit-pair|remove-pair|add-recipient|restore-crontab|update|uninstall|help)
             if [ -z "$VERB" ]; then VERB="$1"; else POSITIONAL_ARG="$1"; fi ;;
         --dir)            INSTALL_DIR="$(cd "$2" 2>/dev/null && pwd)" || die "no such directory: $2"; shift ;;
         --at)             CRON_SPEC="$2"; VERB_FLAGS+=("--at"); shift ;;
@@ -2235,6 +2534,11 @@ case "$VERB" in
     schedule)        do_schedule ;;
     unschedule)      do_unschedule ;;
     add-recipient)   do_add_recipient ;;
+    pairs)           do_pairs_menu ;;
+    list-pairs)      do_list_pairs ;;
+    add-pair)        do_add_pair ;;
+    edit-pair)       do_edit_pair ;;
+    remove-pair)     do_remove_pair ;;
     restore-crontab) do_restore_crontab ;;
     update)          do_update ;;
     uninstall)       do_uninstall ;;

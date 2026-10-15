@@ -281,6 +281,15 @@ a recipient prompts to turn it back on so the new address is not silently
 mailed nothing. Unattended: `FMDRIFT_SETUP_NEW_RECIPIENT` and
 `FMDRIFT_SETUP_RECIPIENT_PAIRS` (`bash setup.sh help` has the full list).
 
+To add, change or drop a whole pair — its two firewalls, how its rules are
+matched, which policies, who gets its report and when — use the **Pairs**
+menu or `bash setup.sh add-pair` / `edit-pair NAME` / `remove-pair NAME`.
+Each works on a copy of `config.ini`, shows the diff, asks, backs up,
+writes, proves the file still loads and offers a dry run of the pair.
+Unattended, `add-pair` and `edit-pair` read the same `FMDRIFT_SETUP_PAIR1_*`
+variables as the wizard, and `FMDRIFT_SETUP_TARGET_PAIR` names the pair to
+edit or remove.
+
 ## Updating the tool
 
 ```bash

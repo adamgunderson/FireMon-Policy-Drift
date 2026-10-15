@@ -75,7 +75,7 @@ bash setup.sh
   4) Schedule    install or replace the cron entry
   5) Unschedule  remove the cron entry, leaving files alone
   6) Status      configuration, schedule and last findings
-  7) Add recipient  add an email to one, several, or every pair
+  7) Pairs       add, modify or remove a firewall pair; its recipients
   8) Update      fetch the newest release; keeps config, secrets, state
   9) Full setup  configure, verify, then schedule in one pass
  10) Uninstall   remove the schedule and, optionally, the files
@@ -109,8 +109,24 @@ bash setup.sh configure     # or verify / run / schedule / status / ...
 bash setup.sh help          # every verb, option and environment variable
 ```
 
-**To add someone after setup has already run** — a manager who wants
-visibility, say — without redoing the wizard:
+**To manage pairs after setup has already run**, the **Pairs** menu item
+(or the verbs it fronts) changes one pair at a time without redoing the
+wizard. Each pair carries its own recipients and send rule, so this is also
+how "send this pair's report to these people" is set:
+
+```bash
+bash setup.sh list-pairs                 # every pair: devices, recipients, send rule
+bash setup.sh add-pair                   # lists devices and policies to pick from
+bash setup.sh edit-pair us-dr            # every prompt defaults to the current value
+bash setup.sh remove-pair us-dr          # drops the pair and its last-run state
+```
+
+Each edits a copy of `config.ini`, shows the diff, asks, backs the file up,
+writes it, proves it still loads (rolling back if not) and offers a dry run
+of the pair against the live server.
+
+**To add someone to an existing pair** — a manager who wants visibility,
+say:
 
 ```bash
 bash setup.sh add-recipient boss@example.com                  # asks which pair(s), default "all"

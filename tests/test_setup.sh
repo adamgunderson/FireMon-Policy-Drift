@@ -313,6 +313,91 @@ mailq() { printf -- '-Queue ID- --Size-- ----Arrival Time---- -Sender/Recipient-
 check "one queued" "1" "$(mail_queue_count)"
 unset -f mailq
 
+# -------------------------------------------------------------- pair editing --
+
+echo "== pair editing =="
+
+cp "$ROOT/config.example.ini" "$WORK/config6.ini"
+p6="$WORK/p6"; : > "$p6"
+append_pair_section "$p6" "us-dr" "USE-FW" "USW-FW" "A = B" "" "" "" "a@example.com" "changes"
+append_pair_section "$p6" "apac" "AP-1" "AP-2" "" "" "" "" "" "never"
+insert_before_section "$WORK/config6.ini" compare "$p6"
+printf '\n[policies:apac]\nX = Y\n' >> "$WORK/config6.ini"
+
+set_section_key "$WORK/config6.ini" "pair:us-dr" recipients "b@example.com"
+check "set_section_key replaces a key"     "b@example.com" "$(config_value "$WORK/config6.ini" pair:us-dr recipients)"
+set_section_key "$WORK/config6.ini" "pair:us-dr" primary_label "Prod"
+check "set_section_key adds a missing key" "Prod" "$(config_value "$WORK/config6.ini" pair:us-dr primary_label)"
+check "the added key is in its own section only" "" "$(config_value "$WORK/config6.ini" pair:apac primary_label)"
+check "set_section_key leaves the other pair" "AP-1" "$(config_value "$WORK/config6.ini" pair:apac primary)"
+check "set_section_key keeps the file loadable by section order" "us-dr
+apac" "$(list_pair_names "$WORK/config6.ini")"
+set_section_key "$WORK/config6.ini" "pair:apac" recipients ""
+check "set_section_key writes an empty value" "" "$(config_value "$WORK/config6.ini" pair:apac recipients)"
+
+remove_pair_sections "$WORK/config6.ini" "APAC"
+check "remove_pair_sections drops the pair (case-insensitive)" "" "$(find_pair_section "$WORK/config6.ini" apac)"
+check "remove_pair_sections drops its scoped sections" "" "$(config_value "$WORK/config6.ini" policies:apac X)"
+check "remove_pair_sections keeps the other pair" "USE-FW" "$(config_value "$WORK/config6.ini" pair:us-dr primary)"
+check "remove_pair_sections keeps [compare]" "default" "$(config_value "$WORK/config6.ini" compare fields)"
+check "pair_state_file slug" "last-us_dr_pair_1.json" "$(basename "$(pair_state_file 'us dr/pair:1')")"
+
+# The verbs end to end, unattended, with the report itself stubbed out.
+INSTALL_DIR="$WORK/inst"; mkdir -p "$INSTALL_DIR/state"
+cp "$ROOT/config.example.ini" "$INSTALL_DIR/config.example.ini"
+cp "$ROOT/config.example.ini" "$INSTALL_DIR/config.ini"
+printf 'FMDRIFT_PASSWORD=x\n' > "$INSTALL_DIR/secrets.env"
+run_drift() { return 0; }
+_run_candidate() { return 0; }
+OPT_YES=1; POSITIONAL_ARG=""; PAIRS=()
+export FMDRIFT_SETUP_PAIR1_NAME=ha FMDRIFT_SETUP_PAIR1_PRIMARY=FW-1 FMDRIFT_SETUP_PAIR1_SECONDARY=FW-2 \
+       FMDRIFT_SETUP_PAIR1_POLICIES=all FMDRIFT_SETUP_PAIR1_MATCH_BY=vendor_id FMDRIFT_SETUP_LIST_PROPERTIES=no \
+       FMDRIFT_SETUP_PAIR1_CATEGORIES=all FMDRIFT_SETUP_PAIR1_CHANGE_REQUESTS=none FMDRIFT_SETUP_PAIR1_APPLICATIONS=none \
+       FMDRIFT_SETUP_PAIR1_RECIPIENTS=ops@example.com FMDRIFT_SETUP_PAIR1_SEND_WHEN=drift
+out="$( (do_add_pair) 2>&1 )"; rc=$?
+check "add-pair exits 0" "0" "$rc"
+check "add-pair wrote the devices" "FW-1" "$(config_value "$INSTALL_DIR/config.ini" pair:ha primary)"
+check "add-pair wrote match_by" "vendor_id" "$(config_value "$INSTALL_DIR/config.ini" pair:ha match_by)"
+check "add-pair wrote recipients" "ops@example.com" "$(config_value "$INSTALL_DIR/config.ini" pair:ha recipients)"
+check "add-pair backed the config up" "1" "$(ls "$INSTALL_DIR/backups"/config-*.ini.bak 2>/dev/null | wc -l)"
+check "add-pair leaves no candidate behind" "0" "$([ -e "$INSTALL_DIR/config.ini.new" ] && echo 1 || echo 0)"
+check "add-pair config mode 600" "600" "$(stat -c '%a' "$INSTALL_DIR/config.ini")"
+out="$( (do_add_pair) 2>&1 )"; rc=$?
+check "add-pair refuses a duplicate name" "1" "$rc"
+check_contains "duplicate is explained" "already exists" "$out"
+
+export FMDRIFT_SETUP_PAIR1_RECIPIENTS="ops@example.com, boss@example.com" FMDRIFT_SETUP_PAIR1_SEND_WHEN=changes \
+       FMDRIFT_SETUP_TARGET_PAIR=HA
+: > "$INSTALL_DIR/state/last-ha.json"
+sleep 1
+out="$( (do_edit_pair) 2>&1 )"; rc=$?
+check "edit-pair exits 0" "0" "$rc"
+check "edit-pair changed recipients" "ops@example.com,boss@example.com" "$(config_value "$INSTALL_DIR/config.ini" pair:ha recipients)"
+check "edit-pair changed send_when" "changes" "$(config_value "$INSTALL_DIR/config.ini" pair:ha send_when)"
+check "edit-pair kept the devices" "FW-2" "$(config_value "$INSTALL_DIR/config.ini" pair:ha secondary)"
+check "edit-pair kept match_by" "vendor_id" "$(config_value "$INSTALL_DIR/config.ini" pair:ha match_by)"
+check "edit-pair backed the config up again" "2" "$(ls "$INSTALL_DIR/backups"/config-*.ini.bak 2>/dev/null | wc -l)"
+out="$( (do_edit_pair) 2>&1 )"; rc=$?
+check "edit-pair with nothing changed exits 0" "0" "$rc"
+check_contains "edit-pair says nothing changed" "nothing changed" "$out"
+
+out="$( (do_remove_pair) 2>&1 )"; rc=$?
+check "remove-pair exits 0" "0" "$rc"
+check "remove-pair dropped the section" "" "$(find_pair_section "$INSTALL_DIR/config.ini" ha)"
+check "remove-pair dropped the state file" "0" "$([ -e "$INSTALL_DIR/state/last-ha.json" ] && echo 1 || echo 0)"
+check_contains "remove-pair warned it was the last pair" "only pair" "$out"
+FMDRIFT_SETUP_TARGET_PAIR=nope
+out="$( (do_remove_pair) 2>&1 )"; rc=$?
+check "remove-pair of an unknown pair fails" "1" "$rc"
+
+unset FMDRIFT_SETUP_PAIR1_NAME FMDRIFT_SETUP_PAIR1_PRIMARY FMDRIFT_SETUP_PAIR1_SECONDARY FMDRIFT_SETUP_PAIR1_POLICIES \
+      FMDRIFT_SETUP_PAIR1_MATCH_BY FMDRIFT_SETUP_LIST_PROPERTIES FMDRIFT_SETUP_PAIR1_CATEGORIES \
+      FMDRIFT_SETUP_PAIR1_CHANGE_REQUESTS FMDRIFT_SETUP_PAIR1_APPLICATIONS FMDRIFT_SETUP_PAIR1_RECIPIENTS \
+      FMDRIFT_SETUP_PAIR1_SEND_WHEN FMDRIFT_SETUP_TARGET_PAIR
+unset -f run_drift _run_candidate
+OPT_YES=0; EXTRA_NAMES_FILE=""
+INSTALL_DIR="$WORK"
+
 # ------------------------------------------------------------------- update --
 
 echo "== update =="
