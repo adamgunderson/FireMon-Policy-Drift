@@ -1,0 +1,4 @@
+# Runs on Linux appliances: keep LF everywhere, whatever the checkout OS.
+* text=auto eol=lf
+*.zip binary
+*.tar.gz binary

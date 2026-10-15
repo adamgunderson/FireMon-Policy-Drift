@@ -1,0 +1,20 @@
+# operator files -- never commit
+config.ini
+secrets.env
+secrets.env.new
+out/
+state/
+backups/
+*.log
+.tests.err
+.addrecip.err
+
+# python
+__pycache__/
+*.pyc
+
+# packaged copies and editor noise
+*.zip
+*.tar.gz
+.DS_Store
+Thumbs.db

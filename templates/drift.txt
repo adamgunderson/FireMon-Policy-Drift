@@ -1,0 +1,48 @@
+Policy drift: ${primary} (primary) vs ${secondary} (secondary)${pair_note}
+
+${headline}
+${revision_warning}
+SUMMARY
+-------
+${summary}
+
+RULES THAT DIFFER
+-----------------
+Rules present on both firewalls whose criteria are not the same.
+Lines marked "-" are on ${primary} but not ${secondary}; lines marked "+"
+are on ${secondary} but not ${primary}.
+
+${changed_list}
+
+ONLY ON ${primary}
+------------------
+${only_primary_list}
+
+ONLY ON ${secondary}
+--------------------
+${only_secondary_list}
+${resolved_section}
+
+WHAT WAS COMPARED
+-----------------
+${scope}
+
+FireMon Security Manager: ${portal_url}
+
+IMPORTANT INFORMATION
+---------------------
+  * This report was generated on ${generated_at}.
+  * It compares the configurations FireMon last retrieved from each
+    firewall, not the firewalls directly. A change deployed since then is
+    not yet reflected.
+  * ${matching_note}
+  * The attached spreadsheet lists every finding, including any the lists
+    above truncate.
+
+If you have any questions or require assistance, please contact
+${support_email}.
+
+${from_name}
+
+--
+This is an automated message generated from FireMon Security Manager data.

@@ -1,0 +1,85 @@
+<!--
+  Policy drift report - HTML body.
+
+  Placeholders available to this template:
+    ${primary}                label of the primary side (device name unless [pair] primary_label is set)
+    ${secondary}              label of the secondary side
+    ${primary_device}         the primary device's name in FireMon
+    ${secondary_device}       the secondary device's name in FireMon
+    ${pair_note}              " for pair NAME" when the pair is named, else empty
+    ${headline}               one-sentence result
+    ${revision_warning}       a warning block when the two configurations FireMon holds were
+                              retrieved further apart than [compare] max_revision_skew_hours,
+                              else empty
+    ${matching_note}          one sentence on how rules were paired (by name or vendor id)
+    ${summary_table}          rules retrieved / in scope / config as of, per side (HTML)
+    ${counts_table}           matched, identical, differ, only-on-each, new, resolved (HTML)
+    ${scope}                  bullet list of what was compared and how (HTML)
+    ${only_primary_table}     rules present on the primary only (HTML table)
+    ${only_secondary_table}   rules present on the secondary only (HTML table)
+    ${changed_section}        per-rule field-by-field differences (HTML)
+    ${resolved_section}       differences gone since the last run, or empty (HTML)
+    ${portal_url}             FireMon Security Manager URL
+    ${support_email}          contact address for questions
+    ${from_name}              sender name from [smtp] from_name, used in the sign-off
+    ${generated_at}           when this report was generated
+
+  EDITING NOTE: a literal dollar sign must be written twice, as $$.
+  Styling is inline on purpose - Outlook strips <style> blocks.
+-->
+<div style="font-family: Aptos, 'Segoe UI', sans-serif; font-size: 11pt; color: #333333; max-width: 960px;">
+<p style="margin: 0 0 10pt 0; line-height: 130%;">This is the automated comparison of the firewall policy on <strong>${primary}</strong> (primary) against <strong>${secondary}</strong> (secondary)${pair_note}, taken from the configurations FireMon Security Manager currently holds for each.</p>
+
+<p style="margin: 0 0 10pt 0; line-height: 130%; font-weight: bold;">${headline}</p>
+${revision_warning}
+
+<p style="margin: 14pt 0 4pt 0; line-height: 130%; font-size: 13pt; font-weight: bold; color: #1f4e79; border-bottom: 2px solid #1f4e79; padding-bottom: 3pt;">Summary</p>
+
+${summary_table}
+
+${counts_table}
+
+<p style="margin: 14pt 0 4pt 0; line-height: 130%; font-size: 13pt; font-weight: bold; color: #1f4e79; border-bottom: 2px solid #1f4e79; padding-bottom: 3pt;">Rules That Differ</p>
+
+<p style="margin: 6pt 0 8pt 0; line-height: 130%;">Rules present on both firewalls whose criteria are not the same. Items marked <span style="background-color: #fdecea; color: #c0392b;">&minus;</span> are on ${primary} but not ${secondary}; items marked <span style="background-color: #e8f5e9; color: #1e8449;">+</span> are on ${secondary} but not ${primary}.</p>
+
+${changed_section}
+
+<p style="margin: 14pt 0 4pt 0; line-height: 130%; font-size: 13pt; font-weight: bold; color: #1f4e79; border-bottom: 2px solid #1f4e79; padding-bottom: 3pt;">Only On ${primary}</p>
+
+<p style="margin: 6pt 0 8pt 0; line-height: 130%;">Rules on the primary with no counterpart on ${secondary}.</p>
+
+${only_primary_table}
+
+<p style="margin: 14pt 0 4pt 0; line-height: 130%; font-size: 13pt; font-weight: bold; color: #1f4e79; border-bottom: 2px solid #1f4e79; padding-bottom: 3pt;">Only On ${secondary}</p>
+
+<p style="margin: 6pt 0 8pt 0; line-height: 130%;">Rules on the secondary with no counterpart on ${primary}.</p>
+
+${only_secondary_table}
+
+${resolved_section}
+
+<p style="margin: 14pt 0 4pt 0; line-height: 130%; font-size: 13pt; font-weight: bold; color: #1f4e79; border-bottom: 2px solid #1f4e79; padding-bottom: 3pt;">What Was Compared</p>
+
+${scope}
+
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin: 4pt 0 12pt 0;"><tr>
+<td style="background-color: #1f4e79; padding: 9px 22px;">
+<a href="${portal_url}" style="font-family: Aptos, 'Segoe UI', sans-serif; font-size: 11pt; font-weight: bold; color: #ffffff; text-decoration: none;">Open FireMon Security Manager</a>
+</td>
+</tr></table>
+
+<p style="margin: 14pt 0 4pt 0; line-height: 130%; font-size: 13pt; font-weight: bold; color: #1f4e79; border-bottom: 2px solid #1f4e79; padding-bottom: 3pt;">Important Information</p>
+
+<ul style="margin: 6pt 0 10pt 0; padding-left: 18pt; line-height: 130%;">
+  <li style="margin-bottom: 4pt;">This report was generated on ${generated_at}.</li>
+  <li style="margin-bottom: 4pt;">It compares the configurations FireMon last retrieved from each firewall (the "configuration as of" dates above), not the firewalls directly. A change deployed since then is not yet reflected.</li>
+  <li style="margin-bottom: 4pt;">${matching_note}</li>
+  <li style="margin-bottom: 4pt;">The attached spreadsheet lists every finding, including any the tables above truncate.</li>
+</ul>
+
+<p style="margin: 10pt 0 10pt 0; line-height: 130%;">If you have any questions or require assistance, please contact <a style="color: #1f4e79;" href="mailto:${support_email}">${support_email}</a>.</p>
+
+<p style="margin: 0 0 2pt 0; line-height: 130%;"><strong>${from_name}</strong></p>
+<p style="margin: 10pt 0 0 0; line-height: 130%; font-size: 9pt; color: #808080; border-top: 1px solid #d9d9d9; padding-top: 6pt;">This is an automated message generated from FireMon Security Manager data.</p>
+</div>
