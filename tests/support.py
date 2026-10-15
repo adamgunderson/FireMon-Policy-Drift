@@ -169,8 +169,8 @@ class FakeConfig:
         self.application_property = "Application Name"
         self.attach_csv = True
         self.attach_json = False
-        self.max_rows = 60
-        self.max_diff_rules = 40
+        self.max_rows = 50
+        self.max_diff_rules = 30
         self.portal_url = "https://firemon.example.com/securitymanager/"
         self.support_email = "netops@example.com"
         self.from_name = "FireMon Policy Drift Monitor"

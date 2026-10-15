@@ -425,6 +425,17 @@ def _run_pair(client, cfg, pair, args, run_time, run_id, want_lists) -> PairOutc
     if want_docs:
         _attach_ruledocs(client, cfg, primary, rules_a)
         _attach_ruledocs(client, cfg, secondary, rules_b)
+    elif cfg.fetch_ruledoc == "auto" and cfg.category_property:
+        # The category is parsed from the comment where FMC wrote it there;
+        # a rule with an empty comment still has a category in its rule-doc
+        # property, so fetch the doc for just those rules.
+        for device, rules in ((primary, rules_a), (secondary, rules_b)):
+            gaps = [r for r in rules if not r.category]
+            if gaps:
+                LOG.info("[%s] %s: %d of %d rules carry no category in their comment; "
+                         "reading it from rule documentation", pair.name, device["name"],
+                         len(gaps), len(rules))
+                _attach_ruledocs(client, cfg, device, gaps)
 
     if args.list_properties:
         _print_properties(pair, rules_a, rules_b, primary["name"], secondary["name"])

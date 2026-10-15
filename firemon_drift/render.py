@@ -45,8 +45,13 @@ COLOUR_MUTED = "#767676"
 COLOUR_ADDED_BG = "#e8f5e9"
 COLOUR_REMOVED_BG = "#fdecea"
 COLOUR_NEW = "#b7791f"
+# One highlight for "this is what differs", on both sides alike: the words
+# beside it say which firewall has it, so there is no sign to decode.
+COLOUR_DIFF_BG = "#fff3cd"
+COLOUR_DIFF = "#5c3d00"
+_LINK = 'style="color:%s"' % COLOUR_SECTION
 
-_CELL = "padding: 4pt 8pt; border-bottom: 1px solid #d9d9d9; vertical-align: top;"
+_CELL = "padding:4pt 8pt;border-bottom:1px solid #d9d9d9;vertical-align:top"
 _HEAD = ("padding: 4pt 8pt; border-bottom: 2px solid %s; color: %s; "
          "font-weight: bold; text-align: left;" % (COLOUR_SECTION, COLOUR_SECTION))
 _TABLE = ('<table role="presentation" cellpadding="0" cellspacing="0" border="0" '
@@ -55,10 +60,18 @@ _TABLE = ('<table role="presentation" cellpadding="0" cellspacing="0" border="0"
 _PARA = '<p style="margin: 6pt 0 8pt 0; line-height: 130%%;">%s</p>'
 
 
-def _section(title: str) -> str:
-    return ('<p style="margin: 14pt 0 4pt 0; line-height: 130%%; font-size: 13pt; '
+def _section(title: str, anchor: str = "") -> str:
+    return ('<p%s style="margin: 14pt 0 4pt 0; line-height: 130%%; font-size: 13pt; '
             'font-weight: bold; color: %s; border-bottom: 2px solid %s; '
-            'padding-bottom: 3pt;">%s</p>' % (COLOUR_SECTION, COLOUR_SECTION, title))
+            'padding-bottom: 3pt;">%s</p>' % ((' id="%s"' % anchor) if anchor else "",
+                                             COLOUR_SECTION, COLOUR_SECTION, title))
+
+
+def _link(url: str, text: str) -> str:
+    """An anchor around already-escaped text, or the text alone with no URL."""
+    if not url:
+        return text
+    return '<a href="%s" %s>%s</a>' % (esc(url), _LINK, text)
 _LEADING_COMMENT = re.compile(r"\A\s*<!--.*?-->\s*", re.DOTALL)
 
 # Gmail truncates an HTML body over roughly this size and shows "[Message
@@ -102,6 +115,32 @@ class Renderer:
         # single-pair default, which would only add noise.
         self.pair_tag = "" if pair.name.lower() == "default" else pair.name
 
+    # -- links into Security Manager -------------------------------------
+
+    def _sm_root(self) -> str:
+        base = (getattr(self.cfg, "base_url", "") or "").rstrip("/")
+        return "%s/securitymanager/#/domain/%s" % (base, getattr(self.cfg, "domain_id", 1)) if base else ""
+
+    def _device_url(self, device_id) -> str:
+        root = self._sm_root()
+        return "%s/device/%s/dashboard" % (root, device_id) if (root and device_id) else ""
+
+    def _rule_url(self, rule: Rule) -> str:
+        root = self._sm_root()
+        if not (root and rule.device_id and rule.policy_id and rule.match_id):
+            return ""
+        return "%s/device/%s/policy/%s/rule/%s/dashboard" % (
+            root, rule.device_id, rule.policy_id, rule.match_id)
+
+    def _device_link(self, side: str) -> str:
+        """The side's label, linked to the device in Security Manager."""
+        if side == "primary":
+            return _link(self._device_url(self.report.primary.id), esc(self.label_a))
+        return _link(self._device_url(self.report.secondary.id), esc(self.label_b))
+
+    def _rule_link(self, rule: Rule) -> str:
+        return _link(self._rule_url(rule), esc(rule.name))
+
     # -- templates --------------------------------------------------------
 
     def _template(self, name) -> Template:
@@ -137,7 +176,7 @@ class Renderer:
         ]
         out = [_TABLE, "<tr><th style=\"%s\"></th><th style=\"%s\">%s</th>"
                "<th style=\"%s\">%s</th></tr>"
-               % (_HEAD, _HEAD, esc(self.label_a), _HEAD, esc(self.label_b))]
+               % (_HEAD, _HEAD, self._device_link("primary"), _HEAD, self._device_link("secondary"))]
         for label, a, b in rows:
             out.append('<tr><td style="%s">%s</td><td style="%s">%s</td>'
                        '<td style="%s">%s</td></tr>' % (_CELL, label, _CELL, a, _CELL, b))
@@ -151,21 +190,27 @@ class Renderer:
             return ('<tr><td style="%s">%s</td><td style="%s text-align: right; '
                     'font-weight: bold; color: %s;">%d</td><td style="%s color: %s;">%s</td></tr>'
                     % (_CELL, label, _CELL, colour, value, _CELL, COLOUR_MUTED, note))
+        def jump(anchor, text):
+            # The count rows link to their section; the heading carries the id.
+            return '<a href="#%s" %s>%s</a>' % (anchor, _LINK, text)
         out = [_TABLE]
         out.append(row("Matched on both sides", r.matched, note="same %s%s"
                        % ("vendor rule id" if r.match_by == "vendor_id" else "rule name",
                           " within the paired policy" if r.policy_pairs else "")))
         out.append(row("Identical", r.identical))
-        out.append(row("Differ", len(r.changed), alert=True,
+        out.append(row(jump("differ", "Differ"), len(r.changed), alert=True,
                        note="present on both, criteria differ"))
-        out.append(row("Only on %s" % esc(self.label_a), len(r.only_primary), alert=True,
+        out.append(row(jump("only-primary", "Only on %s" % esc(self.label_a)),
+                       len(r.only_primary), alert=True,
                        note="missing from %s" % esc(self.label_b)))
-        out.append(row("Only on %s" % esc(self.label_b), len(r.only_secondary), alert=True,
+        out.append(row(jump("only-secondary", "Only on %s" % esc(self.label_b)),
+                       len(r.only_secondary), alert=True,
                        note="not on %s" % esc(self.label_a)))
         if r.previous_run is not None:
             out.append(row("New since last run", r.new_count, alert=True,
                            note="last run %s" % esc(_fmt_date(r.previous_run))))
-            out.append(row("Resolved since last run", len(r.resolved)))
+            out.append(row(jump("resolved", "Resolved since last run") if r.resolved
+                           else "Resolved since last run", len(r.resolved)))
         out.append("</table>")
         return "".join(out)
 
@@ -182,7 +227,7 @@ class Renderer:
             out.append(
                 '<tr><td style="%s text-align: right;">%d</td><td style="%s"><strong>%s</strong>%s%s</td>'
                 '<td style="%s">%s</td><td style="%s">%s</td><td style="%s">%s</td><td style="%s">%s</td></tr>'
-                % (_CELL, rule.order, _CELL, esc(rule.name), _new_badge_html(finding),
+                % (_CELL, rule.order, _CELL, self._rule_link(rule), _new_badge_html(finding),
                    (' <span style="color: %s; font-size: 9pt;">(disabled)</span>' % COLOUR_MUTED)
                    if rule.disabled else "",
                    _CELL, esc(rule.policy), _CELL, esc(rule.action.title()),
@@ -193,17 +238,24 @@ class Renderer:
                                 % (len(shown), len(findings))))
         return "".join(out)
 
-    def _diff_values_html(self, values: List[str], marks: List[str], mark: str,
-                          colour: str, bg: str) -> str:
+    def _diff_values_html(self, values: List[str], only_here: List[str], label: str) -> str:
+        """One side's cell for a list field: first what this firewall alone
+        has, highlighted and said in words; then, muted, what both have."""
         if not values:
             return '<span style="color: %s;">(none)</span>' % COLOUR_MUTED
+        only = [v for v in values if v in only_here]
+        both = [v for v in values if v not in only_here]
         parts = []
-        for value in values:
-            if value in marks:
-                parts.append('<span style="background-color: %s; color: %s;">%s%s</span>'
-                             % (bg, colour, mark, esc(value)))
-            else:
-                parts.append(esc(value))
+        if only:
+            parts.append('<span style="background:%s;color:%s"><strong>Only on %s:</strong> %s</span>'
+                         % (COLOUR_DIFF_BG, COLOUR_DIFF, esc(label),
+                            ", ".join(esc(v) for v in only)))
+        else:
+            parts.append('<span style="color:%s">Nothing only on %s</span>'
+                         % (COLOUR_MUTED, esc(label)))
+        if both:
+            parts.append('<span style="color:%s">On both: %s</span>'
+                         % (COLOUR_MUTED, ", ".join(esc(v) for v in both)))
         return "<br>".join(parts)
 
     def _changed_html(self, findings: List[Finding]) -> str:
@@ -216,26 +268,24 @@ class Renderer:
         rule_row = ('<tr><td colspan="3" style="padding: 8pt 6pt 3pt 6pt; border-bottom: '
                     '1px solid #d9d9d9;"><strong>%s</strong>%s <span style="color: %s; '
                     'font-size: 9pt;">%s #%d &middot; %s #%d</span></td></tr>')
-        cell = 'padding: 3pt 6pt; border-bottom: 1px solid #eeeeee; vertical-align: top;'
+        cell = 'padding:3pt 6pt;border-bottom:1px solid #eeeeee;vertical-align:top'
         out = [_TABLE,
                '<tr><th style="%s width: 18%%;">Field</th><th style="%s width: 41%%;">%s</th>'
                '<th style="%s width: 41%%;">%s</th></tr>'
-               % (_HEAD, _HEAD, esc(self.label_a), _HEAD, esc(self.label_b))]
+               % (_HEAD, _HEAD, self._device_link("primary"), _HEAD, self._device_link("secondary"))]
         for finding in shown:
             a, b = finding.primary, finding.secondary
-            out.append(rule_row % (esc(a.name), _new_badge_html(finding), COLOUR_MUTED,
+            out.append(rule_row % (self._rule_link(a), _new_badge_html(finding), COLOUR_MUTED,
                                    esc(a.policy), a.order, esc(b.policy), b.order))
             for diff in finding.diffs:
                 if diff.is_list:
-                    left = self._diff_values_html(diff.primary, diff.removed, "&minus; ",
-                                                  COLOUR_ALERT, COLOUR_REMOVED_BG)
-                    right = self._diff_values_html(diff.secondary, diff.added, "+ ",
-                                                   COLOUR_GOOD, COLOUR_ADDED_BG)
+                    left = self._diff_values_html(diff.primary, diff.removed, self.label_a)
+                    right = self._diff_values_html(diff.secondary, diff.added, self.label_b)
                 else:
-                    left = '<span style="background-color: %s;">%s</span>' % (
-                        COLOUR_REMOVED_BG, esc("; ".join(diff.primary)))
-                    right = '<span style="background-color: %s;">%s</span>' % (
-                        COLOUR_ADDED_BG, esc("; ".join(diff.secondary)))
+                    left = '<span style="background:%s;color:%s">%s</span>' % (
+                        COLOUR_DIFF_BG, COLOUR_DIFF, esc("; ".join(diff.primary)))
+                    right = '<span style="background:%s;color:%s">%s</span>' % (
+                        COLOUR_DIFF_BG, COLOUR_DIFF, esc("; ".join(diff.secondary)))
                 out.append('<tr><td style="%s">%s</td><td style="%s">%s</td>'
                            '<td style="%s">%s</td></tr>'
                            % (cell, esc(diff.label), cell, left, cell, right))
@@ -254,7 +304,7 @@ class Renderer:
         more = ""
         if len(self.report.resolved) > 50:
             more = _PARA % ("and %d more." % (len(self.report.resolved) - 50))
-        return (_section("Resolved Since Last Run") +
+        return (_section("Resolved Since Last Run", "resolved") +
                 (_PARA % "These differences were reported last time and are no longer present.") +
                 '<ul style="margin: 4pt 0 10pt 0; padding-left: 18pt; line-height: 130%%;">%s</ul>%s'
                 % (items, more))
@@ -404,10 +454,14 @@ class Renderer:
             for diff in finding.diffs:
                 lines.append("    %s:" % diff.label)
                 if diff.is_list:
-                    for value in diff.primary:
-                        lines.append("      %s %s" % ("-" if value in diff.removed else " ", value))
-                    for value in diff.added:
-                        lines.append("      + %s" % value)
+                    both = [v for v in diff.primary if v not in diff.removed]
+                    for label, items in ((self.label_a, diff.removed),
+                                         (self.label_b, diff.added), ("both", both)):
+                        text = "%s %s: %s" % ("only on" if label != "both" else "on",
+                                              label, ", ".join(items) if items else "(none)")
+                        wrapped = _wrap(text, 66)
+                        lines.append("      " + wrapped[0])
+                        lines.extend("        " + l for l in wrapped[1:])
                 else:
                     lines.append("      %s: %s" % (self.label_a, "; ".join(diff.primary)))
                     lines.append("      %s: %s" % (self.label_b, "; ".join(diff.secondary)))
@@ -469,6 +523,8 @@ class Renderer:
         context = {
             "primary": esc(self.label_a),
             "secondary": esc(self.label_b),
+            "primary_link": self._device_link("primary"),
+            "secondary_link": self._device_link("secondary"),
             "primary_device": esc(r.primary.name),
             "secondary_device": esc(r.secondary.name),
             "pair_note": (" for pair &ldquo;%s&rdquo;" % esc(self.pair_tag)) if self.pair_tag else "",
@@ -492,6 +548,8 @@ class Renderer:
         text_context = {
             "primary": self.label_a,
             "secondary": self.label_b,
+            "primary_link": self.label_a,
+            "secondary_link": self.label_b,
             "primary_device": r.primary.name,
             "secondary_device": r.secondary.name,
             "pair_note": (" (pair %s)" % self.pair_tag) if self.pair_tag else "",

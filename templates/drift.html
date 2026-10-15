@@ -4,6 +4,8 @@
   Placeholders available to this template:
     ${primary}                label of the primary side (device name unless [pair] primary_label is set)
     ${secondary}              label of the secondary side
+    ${primary_link}           the same labels, linked to the device in Security Manager
+    ${secondary_link}
     ${primary_device}         the primary device's name in FireMon
     ${secondary_device}       the secondary device's name in FireMon
     ${pair_note}              " for pair NAME" when the pair is named, else empty
@@ -28,7 +30,7 @@
   Styling is inline on purpose - Outlook strips <style> blocks.
 -->
 <div style="font-family: Aptos, 'Segoe UI', sans-serif; font-size: 11pt; color: #333333; max-width: 960px;">
-<p style="margin: 0 0 10pt 0; line-height: 130%;">This is the automated comparison of the firewall policy on <strong>${primary}</strong> (primary) against <strong>${secondary}</strong> (secondary)${pair_note}, taken from the configurations FireMon Security Manager currently holds for each.</p>
+<p style="margin: 0 0 10pt 0; line-height: 130%;">This is the automated comparison of the firewall policy on <strong>${primary_link}</strong> (primary) against <strong>${secondary_link}</strong> (secondary)${pair_note}, taken from the configurations FireMon Security Manager currently holds for each.</p>
 
 <p style="margin: 0 0 10pt 0; line-height: 130%; font-weight: bold;">${headline}</p>
 ${revision_warning}
@@ -39,19 +41,19 @@ ${summary_table}
 
 ${counts_table}
 
-<p style="margin: 14pt 0 4pt 0; line-height: 130%; font-size: 13pt; font-weight: bold; color: #1f4e79; border-bottom: 2px solid #1f4e79; padding-bottom: 3pt;">Rules That Differ</p>
+<p id="differ" style="margin: 14pt 0 4pt 0; line-height: 130%; font-size: 13pt; font-weight: bold; color: #1f4e79; border-bottom: 2px solid #1f4e79; padding-bottom: 3pt;">Rules That Differ</p>
 
-<p style="margin: 6pt 0 8pt 0; line-height: 130%;">Rules present on both firewalls whose criteria are not the same. Items marked <span style="background-color: #fdecea; color: #c0392b;">&minus;</span> are on ${primary} but not ${secondary}; items marked <span style="background-color: #e8f5e9; color: #1e8449;">+</span> are on ${secondary} but not ${primary}.</p>
+<p style="margin: 6pt 0 8pt 0; line-height: 130%;">Rules present on both firewalls whose criteria are not the same, one row per differing field. In each cell, what that firewall alone has is <span style="background-color: #fff3cd; color: #5c3d00; padding: 0 2pt;">highlighted</span> and labelled; what both have follows in grey.</p>
 
 ${changed_section}
 
-<p style="margin: 14pt 0 4pt 0; line-height: 130%; font-size: 13pt; font-weight: bold; color: #1f4e79; border-bottom: 2px solid #1f4e79; padding-bottom: 3pt;">Only On ${primary}</p>
+<p id="only-primary" style="margin: 14pt 0 4pt 0; line-height: 130%; font-size: 13pt; font-weight: bold; color: #1f4e79; border-bottom: 2px solid #1f4e79; padding-bottom: 3pt;">Only On ${primary}</p>
 
 <p style="margin: 6pt 0 8pt 0; line-height: 130%;">Rules on the primary with no counterpart on ${secondary}.</p>
 
 ${only_primary_table}
 
-<p style="margin: 14pt 0 4pt 0; line-height: 130%; font-size: 13pt; font-weight: bold; color: #1f4e79; border-bottom: 2px solid #1f4e79; padding-bottom: 3pt;">Only On ${secondary}</p>
+<p id="only-secondary" style="margin: 14pt 0 4pt 0; line-height: 130%; font-size: 13pt; font-weight: bold; color: #1f4e79; border-bottom: 2px solid #1f4e79; padding-bottom: 3pt;">Only On ${secondary}</p>
 
 <p style="margin: 6pt 0 8pt 0; line-height: 130%;">Rules on the secondary with no counterpart on ${primary}.</p>
 
@@ -59,7 +61,7 @@ ${only_secondary_table}
 
 ${resolved_section}
 
-<p style="margin: 14pt 0 4pt 0; line-height: 130%; font-size: 13pt; font-weight: bold; color: #1f4e79; border-bottom: 2px solid #1f4e79; padding-bottom: 3pt;">What Was Compared</p>
+<p id="scope" style="margin: 14pt 0 4pt 0; line-height: 130%; font-size: 13pt; font-weight: bold; color: #1f4e79; border-bottom: 2px solid #1f4e79; padding-bottom: 3pt;">What Was Compared</p>
 
 ${scope}
 

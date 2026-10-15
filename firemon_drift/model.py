@@ -127,6 +127,7 @@ class Rule:
     action: str
     disabled: bool
     log: bool
+    policy_id: str = ""      # FireMon's policy id, for links into Security Manager
     sources: List[ObjectRef] = field(default_factory=list)
     destinations: List[ObjectRef] = field(default_factory=list)
     services: List[ObjectRef] = field(default_factory=list)

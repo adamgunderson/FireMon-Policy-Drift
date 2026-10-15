@@ -238,8 +238,8 @@ class Config:
         self.subject_prefix = em.get("subject_prefix", fallback="").strip()
         self.attach_csv = self._bool(em, "attach_csv", True)
         self.attach_json = self._bool(em, "attach_json", False)
-        self.max_rows = self._int(em, "max_rows", 60)
-        self.max_diff_rules = self._int(em, "max_diff_rules", 40)
+        self.max_rows = self._int(em, "max_rows", 50)
+        self.max_diff_rules = self._int(em, "max_diff_rules", 30)
         self.portal_url = em.get("portal_url", fallback="").strip() or (
             self.base_url + "/securitymanager/")
         self.support_email = em.get("support_email", fallback="").strip()

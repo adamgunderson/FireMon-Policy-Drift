@@ -239,6 +239,7 @@ def build_rule(raw: dict, device_id: int, device_name: str, normalise: NameNorma
         device_name=device_name,
         policy=policy_name,
         policy_key=policy_key,
+        policy_id=str(policy.get("matchId") or ""),
         match_id=str(raw.get("matchId") or ""),
         order=int(raw.get("ruleOrder") or raw.get("ruleNumber") or 0),
         action=(raw.get("ruleAction") or "").upper(),

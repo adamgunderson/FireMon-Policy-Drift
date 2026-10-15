@@ -73,9 +73,15 @@ class Rendering(unittest.TestCase):
         self.assertIn("allow-web &amp; &lt;co&gt;", html_body)
         self.assertNotIn("<co>", html_body)
         self.assertIn("allow-web & <co>", text_body)
-        # Added/removed markers.
-        self.assertIn("+ HTTP", html_body)
-        self.assertIn("+ HTTP", text_body)
+        # What differs is said in words, per side, not with +/- signs.
+        self.assertIn("Only on FW-WEST:</strong> HTTP", html_body)
+        self.assertIn("only on FW-WEST: HTTP", text_body)
+        self.assertNotIn("+ HTTP", text_body)
+        # Count rows jump to their section; device names link to Security Manager.
+        self.assertIn('href="#differ"', html_body)
+        self.assertIn('id="differ"', html_body)
+        self.assertIn('href="#only-primary"', html_body)
+        self.assertIn("securitymanager/#/domain/1/device/", html_body)
         self.assertIn("NEW", html_body)
         self.assertIn("[NEW]", text_body)
         # Resolved section appears with the readable form.

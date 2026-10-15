@@ -8,9 +8,8 @@ ${summary}
 
 RULES THAT DIFFER
 -----------------
-Rules present on both firewalls whose criteria are not the same.
-Lines marked "-" are on ${primary} but not ${secondary}; lines marked "+"
-are on ${secondary} but not ${primary}.
+Rules present on both firewalls whose criteria are not the same. For each
+field: what each firewall alone has, then what both have.
 
 ${changed_list}
 

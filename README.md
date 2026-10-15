@@ -152,10 +152,13 @@ Authenticates once, then for each configured pair (or those named with
 2. Fetches every security rule in the paired policies from each device
    through the SIQL rule search: policy, objects (groups expanded), zones,
    action, logging, comment.
-3. If a filter or a compared field needs rule documentation (category,
-   change request, application, or any custom property), fetches each
-   rule's rule-doc — one small call per rule; about 25 seconds for 2,200
-   rules on the appliance.
+3. If a filter or a compared field needs rule documentation (change
+   request, application, or any custom property), fetches each rule's
+   rule-doc — one small call per rule; about 25 seconds for 2,200 rules on
+   the appliance. The category is read from the rule comment where FMC
+   wrote it (`cat:NAME;`), and the rule-doc is fetched only for the rules
+   whose comment carries none, so the category column and comparison are
+   right at a fraction of the cost.
 4. Matches rules within each policy pair — **by name**, or by the vendor's
    own rule id for an HA pair or two devices that carry the same policy
    (`match_by`) — applies the filter, and compares the configured fields.
@@ -301,12 +304,13 @@ last live run), `never`.
 
 A summary — rules retrieved and in scope per side, configuration dates,
 matched / identical / differ / only-on-each counts, new and resolved since
-last run — then three sections:
+last run — then three sections. The count rows link to their section, and
+every firewall and rule name links to its page in Security Manager:
 
 - **Rules that differ** — per rule, one row per differing field, the
-  primary's value beside the secondary's. For object lists, items on the
-  primary only are marked `−` and items on the secondary only are marked
-  `+`, with colour as a second cue, never the only one.
+  primary's value beside the secondary's. For object lists each cell says
+  in words what that firewall alone has (highlighted), then what both have
+  (grey) — no sign to decode.
 - **Only on the primary** and **only on the secondary** — rule, policy,
   position, action, category and a one-line source → destination : service.
 - **Resolved since last run** — differences reported last time that no
