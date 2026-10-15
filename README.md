@@ -310,8 +310,9 @@ every rule name to a rule search by that name across the domain, which
 shows the rule on both firewalls side by side:
 
 - **Rules that differ** — per rule, one row per differing field, the
-  primary's value beside the secondary's. For object lists, one item per
-  line: an item that firewall alone has is highlighted, the rest are grey.
+  primary's value beside the secondary's. Object lists are shown side by
+  side, line for line, like a diff tool: an item one firewall alone has is
+  highlighted, with a grey gap opposite where the other lacks it.
 - **Only on the primary** and **only on the secondary** — rule, policy,
   position, action, category and a one-line source → destination : service.
 - **Resolved since last run** — differences reported last time that no

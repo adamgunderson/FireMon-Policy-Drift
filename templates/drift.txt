@@ -8,8 +8,9 @@ ${summary}
 
 RULES THAT DIFFER
 -----------------
-Rules present on both firewalls whose criteria are not the same. An item
-on one firewall only is marked with the firewall it is on.
+Rules present on both firewalls whose criteria are not the same. Object
+lists are shown side by side, line for line: a blank on one side is where
+that firewall lacks the item opposite.
 
 ${changed_list}
 

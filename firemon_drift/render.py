@@ -50,6 +50,8 @@ COLOUR_NEW = "#b7791f"
 # beside it say which firewall has it, so there is no sign to decode.
 COLOUR_DIFF_BG = "#fff3cd"
 COLOUR_DIFF = "#5c3d00"
+COLOUR_GAP_BG = "#e6e6e6"
+_MONO = "font-family:Consolas,'Courier New',monospace;font-size:9pt;white-space:nowrap"
 _LINK = 'style="color:%s"' % COLOUR_SECTION
 
 _CELL = "padding:4pt 8pt;border-bottom:1px solid #d9d9d9;vertical-align:top"
@@ -243,20 +245,37 @@ class Renderer:
                                 % (len(shown), len(findings))))
         return "".join(out)
 
-    def _diff_values_html(self, values: List[str], only_here: List[str]) -> str:
-        """One side's cell for a list field: one item per line, the items
-        this firewall alone has highlighted, the ones both have in grey. The
-        column heading says which firewall, so the cell need not."""
-        if not values:
-            return '<span style="color:%s">(none)</span>' % COLOUR_MUTED
-        parts = []
-        for value in values:
-            if value in only_here:
-                parts.append('<span style="background:%s;color:%s"><strong>%s</strong></span>'
-                             % (COLOUR_DIFF_BG, COLOUR_DIFF, esc(value)))
+    @staticmethod
+    def _diff_rows(diff) -> List[tuple]:
+        """The two lists merged into one sequence of (left, right) rows, like
+        a side-by-side diff: an item on both sides sits on one row; an item
+        on one side only sits beside a gap on the other."""
+        union = sorted(set(diff.primary) | set(diff.secondary), key=lambda v: v.lower())
+        a, b = set(diff.primary), set(diff.secondary)
+        return [(v if v in a else None, v if v in b else None) for v in union]
+
+    def _diff_pair_html(self, diff) -> tuple:
+        """The two cells of a list field, line for line. A highlighted item
+        is on that firewall only; the grey gap opposite marks where it is
+        missing. Both cells have the same number of lines, in a monospace
+        face that does not wrap, so the rows stay aligned."""
+        if not diff.primary and not diff.secondary:
+            none = '<span style="color:%s">(none)</span>' % COLOUR_MUTED
+            return none, none
+        gap = '<span style="background:%s">%s</span>' % (COLOUR_GAP_BG, "&nbsp;" * 14)
+        hit = '<span style="background:%s;color:%s"><strong>%s</strong></span>'
+        left, right = [], []
+        for va, vb in self._diff_rows(diff):
+            if va is not None and vb is not None:
+                left.append(esc(va))
+                right.append(esc(vb))
+            elif va is not None:
+                left.append(hit % (COLOUR_DIFF_BG, COLOUR_DIFF, esc(va)))
+                right.append(gap)
             else:
-                parts.append('<span style="color:%s">%s</span>' % (COLOUR_MUTED, esc(value)))
-        return "<br>".join(parts)
+                left.append(gap)
+                right.append(hit % (COLOUR_DIFF_BG, COLOUR_DIFF, esc(vb)))
+        return "<br>".join(left), "<br>".join(right)
 
     def _changed_html(self, findings: List[Finding]) -> str:
         """One table for every differing rule -- a rule row, then one row per
@@ -279,8 +298,11 @@ class Renderer:
                                    esc(a.policy), a.order, esc(b.policy), b.order))
             for diff in finding.diffs:
                 if diff.is_list:
-                    left = self._diff_values_html(diff.primary, diff.removed)
-                    right = self._diff_values_html(diff.secondary, diff.added)
+                    left, right = self._diff_pair_html(diff)
+                    out.append('<tr><td style="%s">%s</td><td style="%s;%s">%s</td>'
+                               '<td style="%s;%s">%s</td></tr>'
+                               % (cell, esc(diff.label), cell, _MONO, left, cell, _MONO, right))
+                    continue
                 else:
                     left = '<span style="background:%s;color:%s">%s</span>' % (
                         COLOUR_DIFF_BG, COLOUR_DIFF, esc("; ".join(diff.primary)))
@@ -454,15 +476,13 @@ class Renderer:
             for diff in finding.diffs:
                 lines.append("    %s:" % diff.label)
                 if diff.is_list:
-                    # One item per line; an item on one side only says which.
-                    rows = [(v, self.label_a if v in diff.removed else "") for v in diff.primary]
-                    rows += [(v, self.label_b) for v in diff.added]
-                    width = max(len(v) for v, _ in rows)
-                    for value, side in rows:
-                        if side:
-                            lines.append("      %-*s   <- %s only" % (width, value, side))
-                        else:
-                            lines.append("      %s" % value)
+                    # Side by side, line for line: a blank on one side is
+                    # where that firewall lacks the item opposite.
+                    rows = self._diff_rows(diff)
+                    width = max([len(v) for v, _ in rows if v] + [len(self.label_a), 8])
+                    lines.append("      %-*s | %s" % (width, self.label_a, self.label_b))
+                    for va, vb in rows:
+                        lines.append("      %-*s | %s" % (width, va or "", vb or ""))
                 else:
                     lines.append("      %s: %s" % (self.label_a, "; ".join(diff.primary)))
                     lines.append("      %s: %s" % (self.label_b, "; ".join(diff.secondary)))

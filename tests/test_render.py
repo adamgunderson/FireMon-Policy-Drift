@@ -75,7 +75,8 @@ class Rendering(unittest.TestCase):
         self.assertIn("allow-web & <co>", text_body)
         # What differs is said in words, per side, not with +/- signs.
         self.assertIn("<strong>HTTP</strong></span>", html_body)
-        self.assertIn("HTTP    <- FW-WEST only", text_body)
+        self.assertRegex(text_body, r"(?m)^\s+\| HTTP\s*$")       # gap on the left, HTTP on the right
+        self.assertRegex(text_body, r"(?m)^\s+HTTPS\s+\| HTTPS\s*$")
         self.assertNotIn("+ HTTP", text_body)
         # Count rows jump to their section; device names link to Security Manager.
         self.assertIn('href="#differ"', html_body)
