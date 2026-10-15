@@ -8,8 +8,8 @@ ${summary}
 
 RULES THAT DIFFER
 -----------------
-Rules present on both firewalls whose criteria are not the same. For each
-field: what each firewall alone has, then what both have.
+Rules present on both firewalls whose criteria are not the same. An item
+on one firewall only is marked with the firewall it is on.
 
 ${changed_list}
 

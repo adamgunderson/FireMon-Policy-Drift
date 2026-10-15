@@ -238,24 +238,19 @@ class Renderer:
                                 % (len(shown), len(findings))))
         return "".join(out)
 
-    def _diff_values_html(self, values: List[str], only_here: List[str], label: str) -> str:
-        """One side's cell for a list field: first what this firewall alone
-        has, highlighted and said in words; then, muted, what both have."""
+    def _diff_values_html(self, values: List[str], only_here: List[str]) -> str:
+        """One side's cell for a list field: one item per line, the items
+        this firewall alone has highlighted, the ones both have in grey. The
+        column heading says which firewall, so the cell need not."""
         if not values:
-            return '<span style="color: %s;">(none)</span>' % COLOUR_MUTED
-        only = [v for v in values if v in only_here]
-        both = [v for v in values if v not in only_here]
+            return '<span style="color:%s">(none)</span>' % COLOUR_MUTED
         parts = []
-        if only:
-            parts.append('<span style="background:%s;color:%s"><strong>Only on %s:</strong> %s</span>'
-                         % (COLOUR_DIFF_BG, COLOUR_DIFF, esc(label),
-                            ", ".join(esc(v) for v in only)))
-        else:
-            parts.append('<span style="color:%s">Nothing only on %s</span>'
-                         % (COLOUR_MUTED, esc(label)))
-        if both:
-            parts.append('<span style="color:%s">On both: %s</span>'
-                         % (COLOUR_MUTED, ", ".join(esc(v) for v in both)))
+        for value in values:
+            if value in only_here:
+                parts.append('<span style="background:%s;color:%s"><strong>%s</strong></span>'
+                             % (COLOUR_DIFF_BG, COLOUR_DIFF, esc(value)))
+            else:
+                parts.append('<span style="color:%s">%s</span>' % (COLOUR_MUTED, esc(value)))
         return "<br>".join(parts)
 
     def _changed_html(self, findings: List[Finding]) -> str:
@@ -279,8 +274,8 @@ class Renderer:
                                    esc(a.policy), a.order, esc(b.policy), b.order))
             for diff in finding.diffs:
                 if diff.is_list:
-                    left = self._diff_values_html(diff.primary, diff.removed, self.label_a)
-                    right = self._diff_values_html(diff.secondary, diff.added, self.label_b)
+                    left = self._diff_values_html(diff.primary, diff.removed)
+                    right = self._diff_values_html(diff.secondary, diff.added)
                 else:
                     left = '<span style="background:%s;color:%s">%s</span>' % (
                         COLOUR_DIFF_BG, COLOUR_DIFF, esc("; ".join(diff.primary)))
@@ -454,14 +449,15 @@ class Renderer:
             for diff in finding.diffs:
                 lines.append("    %s:" % diff.label)
                 if diff.is_list:
-                    both = [v for v in diff.primary if v not in diff.removed]
-                    for label, items in ((self.label_a, diff.removed),
-                                         (self.label_b, diff.added), ("both", both)):
-                        text = "%s %s: %s" % ("only on" if label != "both" else "on",
-                                              label, ", ".join(items) if items else "(none)")
-                        wrapped = _wrap(text, 66)
-                        lines.append("      " + wrapped[0])
-                        lines.extend("        " + l for l in wrapped[1:])
+                    # One item per line; an item on one side only says which.
+                    rows = [(v, self.label_a if v in diff.removed else "") for v in diff.primary]
+                    rows += [(v, self.label_b) for v in diff.added]
+                    width = max(len(v) for v, _ in rows)
+                    for value, side in rows:
+                        if side:
+                            lines.append("      %-*s   <- %s only" % (width, value, side))
+                        else:
+                            lines.append("      %s" % value)
                 else:
                     lines.append("      %s: %s" % (self.label_a, "; ".join(diff.primary)))
                     lines.append("      %s: %s" % (self.label_b, "; ".join(diff.secondary)))

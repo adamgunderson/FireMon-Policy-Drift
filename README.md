@@ -308,9 +308,8 @@ last run — then three sections. The count rows link to their section, and
 every firewall and rule name links to its page in Security Manager:
 
 - **Rules that differ** — per rule, one row per differing field, the
-  primary's value beside the secondary's. For object lists each cell says
-  in words what that firewall alone has (highlighted), then what both have
-  (grey) — no sign to decode.
+  primary's value beside the secondary's. For object lists, one item per
+  line: an item that firewall alone has is highlighted, the rest are grey.
 - **Only on the primary** and **only on the secondary** — rule, policy,
   position, action, category and a one-line source → destination : service.
 - **Resolved since last run** — differences reported last time that no
