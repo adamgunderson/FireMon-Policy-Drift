@@ -83,7 +83,7 @@ class Rendering(unittest.TestCase):
         self.assertIn('href="#only-primary"', html_body)
         self.assertIn("securitymanager/#/domain/1/device/", html_body)
         self.assertIn("listrules?page=1&amp;count=20&amp;advancedMode=0&amp;siql=domain%20%7B%20id%20%3D%201%20%7D"
-                      "%20%20AND%20rule%20%7B%20ruleName%20%7E%20%27allow-web%20%26%20%3Cco%3E%27%20%7D%20", html_body)
+                      "%20%20AND%20rule%20%7B%20ruleName%20~%20%27allow-web%20%26%20%3Cco%3E%27%20%7D%20", html_body)
         self.assertIn("NEW", html_body)
         self.assertIn("[NEW]", text_body)
         # Resolved section appears with the readable form.
