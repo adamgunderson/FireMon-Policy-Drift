@@ -10,4 +10,4 @@ delivered by email.
 Standard library only. See README.md for usage and DEPLOYMENT.md for install.
 """
 
-__version__ = "1.1.0"
+__version__ = "1.2.0"

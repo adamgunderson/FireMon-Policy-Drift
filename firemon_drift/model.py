@@ -239,6 +239,7 @@ class DriftReport:
     matched: int = 0           # keys present on both sides, in scope
     identical: int = 0
     fields: Tuple[str, ...] = DEFAULT_FIELDS
+    categories: bool = True    # False: categories were left out (compare_categories)
     object_mode: str = "name"
     policy_pairs: List[Tuple[str, str]] = field(default_factory=list)
     filter_lines: List[str] = field(default_factory=list)

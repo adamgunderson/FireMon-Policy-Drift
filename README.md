@@ -174,7 +174,9 @@ Authenticates once, then for each configured pair (or those named with
    the appliance. The category is read from the rule comment where FMC
    wrote it (`cat:NAME;`), and the rule-doc is fetched only for the rules
    whose comment carries none, so the category column and comparison are
-   right at a fraction of the cost.
+   right at a fraction of the cost. With `compare_categories = false` (or
+   `--no-categories`) the category is not read, compared, filtered on or
+   shown at all, for sites that do not populate the category property.
 4. Matches rules within each policy pair — **by name**, or by the vendor's
    own rule id for an HA pair or two devices that carry the same policy
    (`match_by`) — applies the filter, and compares the configured fields.
@@ -363,7 +365,7 @@ nothing.
 --policy A[=B]        compare policy A with B (repeatable); --all-policies to ignore [policies]
 --category GLOB       --cr TEXT   --application GLOB   --rule-name GLOB   --property NAME=GLOB
 --fields LIST         --object-mode name|contents|both   --match-by name|vendor_id
---exclude-disabled
+--exclude-disabled    --no-categories
 
 --list-devices [PATTERN]   firewall devices, to find names for [pair]
 --list-policies            the policies on each device, to fill [policies]

@@ -201,6 +201,9 @@ class Config:
         if self.max_revision_skew_hours < 0:
             raise ConfigError("[compare] max_revision_skew_hours must be 0 or more")
         self.match_case_insensitive = self._bool(cmp_, "match_case_insensitive", False)
+        # Categories can be left out altogether (they mean nothing where the
+        # category property is not populated): see apply_category_switch.
+        self.compare_categories = self._bool(cmp_, "compare_categories", True)
         self.category_property = self._str(cmp_, "category_property", "FMC ACP Category")
         self.category_comment_pattern = self._str(
             cmp_, "category_comment_pattern", r"cat:\s*([^;]*?)\s*;")

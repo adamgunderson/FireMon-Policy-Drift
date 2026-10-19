@@ -152,6 +152,19 @@ class Rendering(unittest.TestCase):
         self.assertLess(len(html_body.encode("utf-8")), GMAIL_CLIP_BYTES)
 
 
+class CategoryColumn(unittest.TestCase):
+    def test_category_column_follows_the_switch(self):
+        cfg, pair = support.FakeConfig(), support.FakePair()
+        _, html_body, text_body = Renderer(cfg, pair, make_report(drift_findings())).render()
+        self.assertIn(">Category</th>", html_body)
+        self.assertIn("no category", text_body)
+        report = make_report(drift_findings())
+        report.categories = False
+        _, html_body, text_body = Renderer(cfg, pair, report).render()
+        self.assertNotIn(">Category</th>", html_body)
+        self.assertNotIn("no category", text_body)
+
+
 class Attachments(unittest.TestCase):
     def test_csv_rows_and_json(self):
         cfg = support.FakeConfig(attach_json=True)

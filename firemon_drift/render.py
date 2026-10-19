@@ -225,20 +225,22 @@ class Renderer:
         if not findings:
             return _PARA % "None."
         shown = findings[: self.cfg.max_rows]
+        cats = self.report.categories
         out = [_TABLE, ('<tr><th style="%s">#</th><th style="%s">Rule</th>'
-                        '<th style="%s">Policy</th><th style="%s">Action</th>'
-                        '<th style="%s">Category</th><th style="%s">Source &rarr; Destination : Service</th></tr>'
-                        % ((_HEAD,) * 6))]
+                        '<th style="%s">Policy</th><th style="%s">Action</th>' % ((_HEAD,) * 4))
+               + (('<th style="%s">Category</th>' % _HEAD) if cats else "")
+               + ('<th style="%s">Source &rarr; Destination : Service</th></tr>' % _HEAD)]
         for finding in shown:
             rule = finding.rule
             out.append(
                 '<tr><td style="%s text-align: right;">%d</td><td style="%s"><strong>%s</strong>%s%s</td>'
-                '<td style="%s">%s</td><td style="%s">%s</td><td style="%s">%s</td><td style="%s">%s</td></tr>'
+                '<td style="%s">%s</td><td style="%s">%s</td>'
                 % (_CELL, rule.order, _CELL, self._rule_link(rule), _new_badge_html(finding),
                    (' <span style="color: %s; font-size: 9pt;">(disabled)</span>' % COLOUR_MUTED)
                    if rule.disabled else "",
-                   _CELL, esc(rule.policy), _CELL, esc(rule.action.title()),
-                   _CELL, esc(rule.category or "-"), _CELL, esc(rule.summary())))
+                   _CELL, esc(rule.policy), _CELL, esc(rule.action.title()))
+                + (('<td style="%s">%s</td>' % (_CELL, esc(rule.category or "-"))) if cats else "")
+                + '<td style="%s">%s</td></tr>' % (_CELL, esc(rule.summary())))
         out.append("</table>")
         if len(findings) > len(shown):
             out.append(_PARA % ("Showing %d of %d. The full list is in the attached CSV."
@@ -458,8 +460,9 @@ class Renderer:
             rule = finding.rule
             lines.append("  #%-5d %s%s%s" % (rule.order, rule.name, _new_badge_text(finding),
                                              " (disabled)" if rule.disabled else ""))
-            lines.append("         policy %s | %s | %s" % (rule.policy, rule.action.title(),
-                                                           rule.category or "no category"))
+            lines.append("         policy %s | %s%s" % (
+                rule.policy, rule.action.title(),
+                (" | %s" % (rule.category or "no category")) if self.report.categories else ""))
             lines.append("         %s" % rule.summary())
         if len(findings) > self.cfg.max_rows:
             lines.append("  ... %d more in the attached CSV" % (len(findings) - self.cfg.max_rows))

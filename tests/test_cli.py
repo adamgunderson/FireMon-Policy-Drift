@@ -105,5 +105,60 @@ class ZeroPairConfig(unittest.TestCase):
         self.assertNotIn("Configured pairs (0)", text)
 
 
+
+class CategorySwitch(unittest.TestCase):
+    """compare_categories = false / --no-categories: nothing reads, compares
+    or filters on the category."""
+
+    def setUp(self):
+        self.work = tempfile.mkdtemp()
+        self.templates = os.path.join(support.ROOT, "templates")
+
+    def tearDown(self):
+        shutil.rmtree(self.work, ignore_errors=True)
+
+    def load(self, compare=""):
+        path = os.path.join(self.work, "config.ini")
+        text = BARE + "\n[compare]\n" + compare + "\n[filter]\ncategories = ESO*\n"
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write(text % {"templates": self.templates})
+        return config_module.load(path)
+
+    def run_overrides(self, cfg, *extra):
+        args = cli.build_parser().parse_args(
+            ["--config", "x", "--primary", "A", "--secondary", "B"] + list(extra))
+        pairs = cli._select_pairs(cfg, args)
+        cli._apply_overrides(cfg, pairs, args)
+        return pairs[0]
+
+    def test_on_by_default(self):
+        cfg = self.load()
+        pair = self.run_overrides(cfg)
+        self.assertTrue(cfg.compare_categories)
+        self.assertIn("category", pair.fields)
+        self.assertEqual(pair.categories, ["ESO*"])
+        self.assertEqual(cfg.category_property, "FMC ACP Category")
+
+    def test_config_switch_off(self):
+        cfg = self.load("compare_categories = false\n")
+        with self.assertLogs("firemon_drift", level="WARNING"):
+            pair = self.run_overrides(cfg)
+        self.assertNotIn("category", pair.fields)
+        self.assertEqual(pair.categories, [])
+        self.assertEqual((cfg.category_property, cfg.category_comment_pattern), ("", ""))
+
+    def test_command_line_switch_off(self):
+        cfg = self.load()
+        with self.assertLogs("firemon_drift", level="WARNING"):
+            pair = self.run_overrides(cfg, "--no-categories")
+        self.assertFalse(cfg.compare_categories)
+        self.assertNotIn("category", pair.fields)
+
+    def test_category_only_fields_is_an_error(self):
+        cfg = self.load("compare_categories = false\nfields = category\n")
+        with self.assertRaises(config_module.ConfigError):
+            self.run_overrides(cfg)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -95,6 +95,9 @@ def build_parser():
                             "one policy from the same manager; a rename then reads as a rename)")
     scope.add_argument("--exclude-disabled", action="store_true",
                        help="leave disabled rules out of the comparison")
+    scope.add_argument("--no-categories", action="store_true",
+                       help="leave categories out: not read, compared, filtered on or shown "
+                            "(as [compare] compare_categories = false)")
 
     diag = parser.add_argument_group("diagnostics (read-only, then exit)")
     diag.add_argument("--list-pairs", action="store_true",
@@ -229,6 +232,29 @@ def _apply_overrides(cfg, pairs, args):
             pair.send_when = args.send_when
     if args.no_csv:
         cfg.attach_csv = False
+    if getattr(args, "no_categories", False):
+        cfg.compare_categories = False
+    _apply_category_switch(cfg, pairs)
+
+
+def _apply_category_switch(cfg, pairs):
+    """compare_categories = false: no category is read (so no rule
+    documentation is fetched for it), compared or filtered on, and the report
+    leaves the Category column out."""
+    if cfg.compare_categories:
+        return
+    cfg.category_property = ""
+    cfg.category_comment_pattern = ""
+    for pair in pairs:
+        fields = tuple(f for f in pair.fields if f != "category")
+        if not fields:
+            raise config_module.ConfigError(
+                "[%s] no fields left to compare once category is excluded" % pair.name)
+        pair.fields = fields
+        if pair.categories:
+            LOG.warning("[%s] categories are not compared; ignoring the category filter (%s)",
+                        pair.name, ", ".join(pair.categories))
+            pair.categories = []
 
 
 def _build_filter(cfg, pair) -> compare_module.RuleFilter:
@@ -312,7 +338,7 @@ def _print_policies(client, pair, primary, secondary):
     print("")
 
 
-def _print_properties(pair, rules_a, rules_b, label_a, label_b):
+def _print_properties(pair, rules_a, rules_b, label_a, label_b, categories_on=True):
     print("")
     print("Pair %s" % pair.name)
     for label, rules in ((label_a, rules_a), (label_b, rules_b)):
@@ -324,11 +350,12 @@ def _print_properties(pair, rules_a, rules_b, label_a, label_b):
                 counts[name] += 1
                 values.setdefault(name, Counter())[value] += 1
         print("%s -- %d rules" % (label, len(rules)))
-        print("  Categories (%d):" % len(categories))
-        for name, n in categories.most_common(25):
-            print("    %5d  %s" % (n, name))
-        if len(categories) > 25:
-            print("    ... and %d more" % (len(categories) - 25))
+        if categories_on:
+            print("  Categories (%d):" % len(categories))
+            for name, n in categories.most_common(25):
+                print("    %5d  %s" % (n, name))
+            if len(categories) > 25:
+                print("    ... and %d more" % (len(categories) - 25))
         print("  Rule-doc properties with a value:")
         if not counts:
             print("    (none -- rule documentation was not fetched or is empty)")
@@ -438,7 +465,8 @@ def _run_pair(client, cfg, pair, args, run_time, run_id, want_lists) -> PairOutc
                 _attach_ruledocs(client, cfg, device, gaps)
 
     if args.list_properties:
-        _print_properties(pair, rules_a, rules_b, primary["name"], secondary["name"])
+        _print_properties(pair, rules_a, rules_b, primary["name"], secondary["name"],
+                          categories_on=cfg.compare_categories)
         return outcome
 
     if not rules_a and not rules_b:
@@ -460,6 +488,7 @@ def _run_pair(client, cfg, pair, args, run_time, run_id, want_lists) -> PairOutc
         filter_lines=rule_filter.describe(), normalise_lines=normaliser.describe(),
         resolved=resolved, resolved_labels=state_module.load_labels(state_path),
         previous_run=previous_time, ruledoc_fetched=want_docs,
+        categories=cfg.compare_categories,
         pair_name=pair.name, match_by=pair.match_by,
         max_revision_skew_hours=cfg.max_revision_skew_hours,
     )
